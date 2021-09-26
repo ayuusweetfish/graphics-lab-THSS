@@ -18,6 +18,8 @@ pub struct App {
   sel_polygon: Option<usize>,
   polygons_collapsed: bool,
 
+  last_added_polygon: bool,
+
   last_rect_popup: egui::Rect,
   last_pt_down: (bool, bool),
   last_pt_held: (bool, bool),
@@ -31,6 +33,7 @@ impl Default for App {
       polygons: vec![],
       sel_polygon: None,
       polygons_collapsed: false,
+      last_added_polygon: false,
 
       last_rect_popup: egui::Rect::NOTHING,
       last_pt_down: (false, false),
@@ -215,26 +218,33 @@ impl epi::App for App {
             }
             if egui::CollapsingHeader::new("Polygons").default_open(true).show(ui, |ui| {
               let mut polygon_remove = None;
-              for (index, poly) in self.polygons.iter_mut().enumerate() {
-                let sel = match self.sel_polygon {
-                  Some(i) => i == index,
-                  _ => false,
-                };
-                ui.horizontal(|ui| {
-                  if ui.add_sized(
-                    egui::vec2(80.0, ui.style().spacing.interact_size.y),
-                    egui::SelectableLabel::new(sel, format!("#{} (10)", index + 1))
-                  ).clicked() {
-                    self.sel_polygon = if sel { None } else { Some(index) };
+              ui.allocate_ui(egui::vec2(180.0, 200.0), |ui| {
+                egui::ScrollArea::auto_sized().show(ui, |ui| {
+                  for (index, poly) in self.polygons.iter_mut().enumerate() {
+                    let sel = match self.sel_polygon {
+                      Some(i) => i == index,
+                      _ => false,
+                    };
+                    ui.horizontal(|ui| {
+                      if ui.add_sized(
+                        egui::vec2(80.0, ui.style().spacing.interact_size.y),
+                        egui::SelectableLabel::new(sel, format!("#{} (10)", index + 1))
+                      ).clicked() {
+                        self.sel_polygon = if sel { None } else { Some(index) };
+                      }
+                      ui.color_edit_button_rgb(&mut poly.khroma);
+                      if sel {
+                        if ui.selectable_label(false, "×").clicked() {
+                          polygon_remove = Some(index);
+                        }
+                      }
+                    });
                   }
-                  ui.color_edit_button_rgb(&mut poly.khroma);
-                  if sel {
-                    if ui.selectable_label(false, "×").clicked() {
-                      polygon_remove = Some(index);
-                    }
+                  if self.last_added_polygon {
+                    ui.scroll_to_cursor(egui::Align::BOTTOM);
                   }
                 });
-              }
+              });
               if let Some(index) = polygon_remove {
                 self.polygons.remove(index);
                 if let Some(i) = self.sel_polygon {
@@ -252,6 +262,9 @@ impl epi::App for App {
                 egui::Button::new("☆ new")).clicked()
               {
                 self.add_polygon();
+                self.last_added_polygon = true;
+              } else {
+                self.last_added_polygon = false;
               }
             }).body_response.is_none() {
               self.polygons_collapsed = true;
