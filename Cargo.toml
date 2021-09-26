@@ -1,0 +1,14 @@
+cargo-features = ["edition2021"]
+
+[package]
+name = "polygon_intersect"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = { version = "0.14.0", default-features = false }
+serde = { version = "*", optional = true }
+
+[features]
+default = []
+persistence = ["eframe/persistence", "serde"]
