@@ -24,6 +24,20 @@ impl App {
       else { egui::style::Visuals::light() }
     );
   }
+
+  fn process_canvas_interactions(
+    &mut self,
+    painter: egui::Painter, rect: egui::Rect, resp: egui::Response,
+  ) {
+    if let Some(p) = resp.hover_pos().or(resp.interact_pointer_pos()) {
+      painter.add(egui::Shape::circle_filled(p, 10.0,
+        if resp.is_pointer_button_down_on() {
+          egui::Color32::from_rgb(255, 128, 128)
+        } else {
+          egui::Color32::from_rgb(255, 255, 128)
+        }));
+    }
+  }
 }
 
 impl epi::App for App {
@@ -96,6 +110,11 @@ impl epi::App for App {
         rect_painter, 6.0, egui::Color32::from_rgba_premultiplied(8, 8, 8, 16)));
       painter.add(egui::Shape::circle_filled(
         rect_painter.center(), 480.0, egui::Color32::from_rgb(64, 128, 255)));
+      self.process_canvas_interactions(
+        painter,
+        rect_painter,
+        ui.allocate_rect(rect_painter, egui::Sense::click_and_drag()),
+      );
 
       let rect_popup = egui::Rect {
         min: egui::pos2(16.0, 16.0),
