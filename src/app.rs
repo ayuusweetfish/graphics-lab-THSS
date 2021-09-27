@@ -14,15 +14,22 @@ pub struct Polygon {
 pub struct App {
   dark: bool,
 
+  show_intersection: bool,
+  intersection_khroma: [f32; 4],
+
   polygons: Vec<Polygon>,
   sel_polygon: Option<usize>,
   polygons_collapsed: bool,
 
   last_added_polygon: bool,
 
-  last_rect_popup: egui::Rect,
+  last_rect_popup: [egui::Rect; 2],
   last_pt_down: (bool, bool),
   last_pt_held: (bool, bool),
+}
+
+fn rand_khroma() -> [f32; 3] {
+  [0.5, 0.5, 1.0]
 }
 
 impl Default for App {
@@ -30,12 +37,18 @@ impl Default for App {
     let mut result = Self {
       dark: false,
 
+      show_intersection: false,
+      intersection_khroma: {
+        let k = rand_khroma();
+        [k[0], k[1], k[2], 0.6]
+      },
+
       polygons: vec![],
       sel_polygon: None,
       polygons_collapsed: false,
       last_added_polygon: false,
 
-      last_rect_popup: egui::Rect::NOTHING,
+      last_rect_popup: [egui::Rect::NOTHING; 2],
       last_pt_down: (false, false),
       last_pt_held: (false, false),
     };
@@ -54,7 +67,7 @@ impl App {
 
   fn add_polygon(&mut self) {
     self.polygons.push(Polygon {
-      khroma: [0.5, 0.5, 1.0],
+      khroma: rand_khroma(),
       points: vec![],
     });
     self.sel_polygon = Some(self.polygons.len() - 1);
@@ -64,7 +77,7 @@ impl App {
     &mut self,
     painter: egui::Painter,
     rect: egui::Rect,
-    exclude: egui::Rect,
+    exclude: &[egui::Rect],
     resp: egui::Response,
     input: &egui::InputState,
   ) {
@@ -100,7 +113,8 @@ impl App {
     let pt2_rel = last_pt2_held && !pt2;
 
     // Hold states: valid button presses and drags in the region
-    let excluded = exclude.contains(pt_pos) || !rect.contains(pt_pos);
+    let excluded = !rect.contains(pt_pos) ||
+      exclude.iter().any(|rect| rect.contains(pt_pos));
     if !pt1 { self.last_pt_held.0 = false; }
     else if pt1_press && !excluded { self.last_pt_held.0 = true; }
     if !pt2 { self.last_pt_held.1 = false; }
@@ -182,6 +196,9 @@ impl epi::App for App {
 
   fn update(&mut self, ctx: &egui::CtxRef, _frame: &mut epi::Frame<'_>) {
     egui::CentralPanel::default().show(ctx, |ui| {
+      let width = ui.available_width();
+      let height = ui.available_height();
+
       let rect_painter = ui.available_rect_before_wrap();
       let painter = egui::Painter::new(
         ui.ctx().clone(),
@@ -191,19 +208,17 @@ impl epi::App for App {
       painter.add(egui::Shape::rect_filled(
         rect_painter, 6.0, egui::Color32::from_rgba_premultiplied(8, 8, 8, 16)));
 
+      let exclude = self.last_rect_popup;
       self.process_canvas_interactions(
         painter,
         rect_painter,
-        self.last_rect_popup,
+        &exclude,
         ui.allocate_rect(rect_painter, egui::Sense::hover()),
         ui.input(),
       );
 
-      let rect_popup = egui::Rect {
-        min: egui::pos2(16.0, 16.0),
-        max: egui::pos2(16.0, 16.0),
-      };
-      let width = ui.available_width();
+      let rect_popup = egui::Rect::from_min_size(
+        egui::pos2(16.0, 16.0), egui::Vec2::ZERO);
       ui.allocate_ui_at_rect(rect_popup, |ui| {
         egui::Frame::popup(ui.style())
           .fill(
@@ -212,13 +227,13 @@ impl epi::App for App {
           )
           .show(ui, |ui| {
             ui.set_max_width(width);
-            if ui.button("dark/light").clicked() {
-              self.dark = !self.dark;
-              self.update_theme(ctx);
-            }
+            ui.horizontal(|ui| {
+              ui.checkbox(&mut self.show_intersection, "Intersection");
+              ui.color_edit_button_rgba_unmultiplied(&mut self.intersection_khroma);
+            });
             if egui::CollapsingHeader::new("Polygons").default_open(true).show(ui, |ui| {
               let mut polygon_remove = None;
-              ui.allocate_ui(egui::vec2(180.0, 200.0), |ui| {
+              ui.allocate_ui(egui::vec2(180.0, 240.0), |ui| {
                 egui::ScrollArea::auto_sized().show(ui, |ui| {
                   for (index, poly) in self.polygons.iter_mut().enumerate() {
                     let sel = match self.sel_polygon {
@@ -227,14 +242,15 @@ impl epi::App for App {
                     };
                     ui.horizontal(|ui| {
                       if ui.add_sized(
-                        egui::vec2(80.0, ui.style().spacing.interact_size.y),
-                        egui::SelectableLabel::new(sel, format!("#{} (10)", index + 1))
+                        egui::vec2(160.0, ui.style().spacing.interact_size.y),
+                        egui::SelectableLabel::new(sel, format!("#{} (20 vert, 10 cyc)", index + 1))
                       ).clicked() {
                         self.sel_polygon = if sel { None } else { Some(index) };
                       }
                       ui.color_edit_button_rgb(&mut poly.khroma);
                       if sel {
-                        if ui.selectable_label(false, "×").clicked() {
+                        if ui.selectable_label(false, "×")
+                             .on_hover_text("Remove").clicked() {
                           polygon_remove = Some(index);
                         }
                       }
@@ -258,7 +274,7 @@ impl epi::App for App {
                 }
               }
               if ui.add_sized(
-                egui::vec2(158.0, ui.style().spacing.interact_size.y),
+                egui::vec2(211.0, ui.style().spacing.interact_size.y),
                 egui::Button::new("☆ new")).clicked()
               {
                 self.add_polygon();
@@ -272,7 +288,25 @@ impl epi::App for App {
               self.polygons_collapsed = false;
             }
           });
-        self.last_rect_popup = ui.min_rect();
+        self.last_rect_popup[0] = ui.min_rect();
+      });
+      let rect_popup = egui::Rect::from_min_size(
+        egui::pos2(12.0, height - ui.style().spacing.interact_size.y - 12.0),
+        egui::Vec2::ZERO);
+      ui.allocate_ui_at_rect(rect_popup, |ui| {
+        egui::Frame::popup(ui.style())
+          .fill(
+            if self.dark { egui::Color32::from_rgba_premultiplied(32, 32, 32, 216) }
+            else { egui::Color32::from_rgba_premultiplied(216, 216, 216, 216) }
+          )
+          .show(ui, |ui| {
+            ui.set_max_width(width);
+            if ui.selectable_label(false, "dark/light").clicked() {
+              self.dark = !self.dark;
+              self.update_theme(ctx);
+            }
+          });
+        self.last_rect_popup[1] = ui.min_rect();
       });
     });
   }
