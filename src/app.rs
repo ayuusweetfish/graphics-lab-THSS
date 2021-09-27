@@ -5,7 +5,7 @@ use eframe::{egui, epi};
 #[cfg_attr(feature = "persistence", serde(default))]
 pub struct Polygon {
   khroma: [f32; 3],
-  points: Vec<(f32, f32)>,
+  cycles: Vec<Vec<(f32, f32)>>,
 }
 
 #[derive(Debug)]
@@ -21,6 +21,8 @@ pub struct App {
   sel_polygon: Option<usize>,
   polygons_collapsed: bool,
 
+  cur_cycle: Option<Vec<(f32, f32)>>,
+
   last_added_polygon: bool,
 
   last_rect_popup: [egui::Rect; 2],
@@ -30,6 +32,10 @@ pub struct App {
 
 fn rand_khroma() -> [f32; 3] {
   [0.5, 0.5, 1.0]
+}
+
+fn dist(a: (f32, f32), b: (f32, f32)) -> f32 {
+  ((a.0 - b.0) * (a.0 - b.0) + (a.1 - b.1) * (a.1 - b.1)).sqrt()
 }
 
 impl Default for App {
@@ -46,6 +52,9 @@ impl Default for App {
       polygons: vec![],
       sel_polygon: None,
       polygons_collapsed: false,
+
+      cur_cycle: None,
+
       last_added_polygon: false,
 
       last_rect_popup: [egui::Rect::NOTHING; 2],
@@ -68,9 +77,10 @@ impl App {
   fn add_polygon(&mut self) {
     self.polygons.push(Polygon {
       khroma: rand_khroma(),
-      points: vec![],
+      cycles: vec![],
     });
     self.sel_polygon = Some(self.polygons.len() - 1);
+    self.cur_cycle = None;
   }
 
   fn process_canvas_interactions(
@@ -90,6 +100,16 @@ impl App {
       painter.add(egui::Shape::circle_stroke(
         rect.center(), 480.0,
         egui::Stroke::new(6.0, egui::Color32::from_rgb(64, 128, 255))));
+    }
+    // Current cycle
+    if let Some(cyc) = &self.cur_cycle {
+      for vert in cyc {
+        painter.circle_filled(
+          vert.into(),
+          6.0,
+          egui::Color32::from_rgb(128, 255, 64),
+        );
+      }
     }
 
     // Pointer interactions
@@ -130,6 +150,35 @@ impl App {
     painter.add(egui::Shape::circle_filled(pt_pos, 10.0,
       if pt1_held { egui::Color32::from_rgb(255, 128, 128) }
       else { egui::Color32::from_rgb(255, 255, 128) }));
+
+    if pt1_press {
+      // Adding new point or dragging?
+      let mut dragging = None;
+      if self.cur_cycle.is_none() && self.sel_polygon.is_some() {
+        // Find a point in the polygon
+        let poly = &self.polygons[self.sel_polygon.unwrap()];
+        'outer: for (i, cyc) in poly.cycles.iter().enumerate() {
+          for (j, vert) in cyc.iter().enumerate() {
+            if dist(*vert, pt_pos.into()) <= 6.0 {
+              dragging = Some((i, j));
+              break 'outer;
+            }
+          }
+        }
+      }
+      if let Some((i, j)) = dragging {
+        // Dragging
+      } else if self.sel_polygon.is_some() {
+        // Adding new point
+        let cyc = self.cur_cycle.get_or_insert(vec![]);
+        cyc.push(pt_pos.into());
+      }
+    }
+    if pt2_press {
+      if let Some(cyc) = self.cur_cycle.take() {
+        self.polygons[self.sel_polygon.unwrap()].cycles.push(cyc);
+      }
+    }
   }
 }
 
@@ -243,10 +292,21 @@ impl epi::App for App {
                     ui.horizontal(|ui| {
                       if ui.add_sized(
                         egui::vec2(160.0, ui.style().spacing.interact_size.y),
-                        egui::SelectableLabel::new(sel, format!("#{} (20 vert, 10 cyc)", index + 1))
+                        egui::SelectableLabel::new(sel,
+                          format!("#{} ({} vert, {} cyc)",
+                            index + 1,
+                            poly.cycles.iter().map(|c| c.len()).sum::<usize>(),
+                            poly.cycles.len(),
+                          ))
                       ).clicked() {
                         self.sel_polygon = if sel { None } else { Some(index) };
+                        self.cur_cycle = None;
                       }
+                      // Recalculate selection state to avoid UI jumping
+                      let sel = match self.sel_polygon {
+                        Some(i) => i == index,
+                        _ => false,
+                      };
                       ui.color_edit_button_rgb(&mut poly.khroma);
                       if sel {
                         if ui.selectable_label(false, "×")
