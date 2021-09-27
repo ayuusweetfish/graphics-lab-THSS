@@ -14,10 +14,10 @@ pub struct Polygon {
 pub struct App {
   dark: bool,
 
-  show_intersection: bool,
   intersection_khroma: [f32; 4],
 
   polygons: Vec<Polygon>,
+  polygons_visible: Vec<bool>,
   sel_polygon: Option<usize>,
   polygons_collapsed: bool,
 
@@ -43,13 +43,13 @@ impl Default for App {
     let mut result = Self {
       dark: false,
 
-      show_intersection: false,
       intersection_khroma: {
         let k = rand_khroma();
         [k[0], k[1], k[2], 0.6]
       },
 
       polygons: vec![],
+      polygons_visible: vec![],
       sel_polygon: None,
       polygons_collapsed: false,
 
@@ -79,6 +79,7 @@ impl App {
       khroma: rand_khroma(),
       cycles: vec![],
     });
+    self.polygons_visible.push(true);
     self.sel_polygon = Some(self.polygons.len() - 1);
     self.cur_cycle = None;
   }
@@ -276,14 +277,24 @@ impl epi::App for App {
           )
           .show(ui, |ui| {
             ui.set_max_width(width);
-            ui.horizontal(|ui| {
-              ui.checkbox(&mut self.show_intersection, "Intersection");
-              ui.color_edit_button_rgba_unmultiplied(&mut self.intersection_khroma);
-            });
             if egui::CollapsingHeader::new("Polygons").default_open(true).show(ui, |ui| {
               let mut polygon_remove = None;
               ui.allocate_ui(egui::vec2(180.0, 240.0), |ui| {
                 egui::ScrollArea::auto_sized().show(ui, |ui| {
+                  ui.horizontal(|ui| {
+                    ui.add_sized(
+                      egui::vec2(160.0, ui.style().spacing.interact_size.y),
+                      egui::Label::new("Intersection"),
+                    );
+                    ui.color_edit_button_rgba_unmultiplied(&mut self.intersection_khroma);
+                    let any_visible = self.polygons_visible.iter().any(|x| *x);
+                    if ui.selectable_label(any_visible, "\u{25cb}")
+                         .on_hover_text("Visibility").clicked() {
+                      for value in self.polygons_visible.iter_mut() {
+                        *value = !any_visible;
+                      }
+                    }
+                  });
                   for (index, poly) in self.polygons.iter_mut().enumerate() {
                     let sel = match self.sel_polygon {
                       Some(i) => i == index,
@@ -308,6 +319,10 @@ impl epi::App for App {
                         _ => false,
                       };
                       ui.color_edit_button_rgb(&mut poly.khroma);
+                      if ui.selectable_label(self.polygons_visible[index], "\u{25cb}")
+                           .on_hover_text("Visibility").clicked() {
+                        self.polygons_visible[index] = !self.polygons_visible[index];
+                      }
                       if sel {
                         if ui.selectable_label(false, "×")
                              .on_hover_text("Remove").clicked() {
@@ -323,6 +338,7 @@ impl epi::App for App {
               });
               if let Some(index) = polygon_remove {
                 self.polygons.remove(index);
+                self.polygons_visible.remove(index);
                 if let Some(i) = self.sel_polygon {
                   if i > index {
                     self.sel_polygon = Some(i - 1);
