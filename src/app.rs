@@ -227,35 +227,41 @@ impl App {
       else { egui::Color32::from_rgb(255, 255, 128) }));
     */
 
-    let poly = &mut self.polygons[self.sel_polygon.unwrap()];
-    if pt1_press {
-      // Adding new point or dragging?
-      let mut dragging = None;
-      if self.cur_cycle.is_none() && self.sel_polygon.is_some() {
-        // Find a point in the polygon
-        'outer: for (i, cyc) in poly.cycles.iter().enumerate() {
-          for (j, vert) in cyc.iter().enumerate() {
-            if dist(*vert, pt_pos.into()) <= 6.0 {
-              dragging = Some((i, j));
-              break 'outer;
-            }
+    let find_vertex = |poly: &mut Polygon| {
+      // Find a point in the polygon
+      for (i, cyc) in poly.cycles.iter().enumerate() {
+        for (j, vert) in cyc.iter().enumerate() {
+          if dist(*vert, pt_pos.into()) <= 6.0 {
+            return Some((i, j));
           }
         }
       }
-      if dragging.is_none() {
-        // Or creating new point?
-        'outer: for (i, cyc) in poly.cycles.iter_mut().enumerate() {
-          for j in 0..cyc.len() {
-            if dist_to_seg(pt_pos.into(), cyc[j], cyc[(j + 1) % cyc.len()]) <= 6.0 {
-              cyc.insert(j + 1, pt_pos.into());
-              dragging = Some((i, j + 1));
-              break 'outer;
+      None
+    };
+    if pt1_press {
+      // Adding new point or dragging?
+      let mut dragging = None;
+      if self.sel_polygon.is_some() {
+        let poly = &mut self.polygons[self.sel_polygon.unwrap()];
+        if self.cur_cycle.is_none() {
+          dragging = find_vertex(poly);
+        }
+        if dragging.is_none() {
+          // Or creating new point?
+          'outer: for (i, cyc) in poly.cycles.iter_mut().enumerate() {
+            for j in 0..cyc.len() {
+              if dist_to_seg(pt_pos.into(), cyc[j], cyc[(j + 1) % cyc.len()]) <= 6.0 {
+                cyc.insert(j + 1, pt_pos.into());
+                dragging = Some((i, j + 1));
+                break 'outer;
+              }
             }
           }
         }
       }
       if let Some((i, j)) = dragging {
         // Dragging
+        let poly = &mut self.polygons[self.sel_polygon.unwrap()];
         self.dragging_vert = DraggingVert::PolygonCycle(i, j);
         self.drag_offset = diff(pt_pos.into(), poly.cycles[i][j]);
       } else if self.sel_polygon.is_some() {
@@ -270,6 +276,7 @@ impl App {
       }
     } else if pt1 {
       if let DraggingVert::PolygonCycle(i, j) = self.dragging_vert {
+        let poly = &mut self.polygons[self.sel_polygon.unwrap()];
         poly.cycles[i][j] = diff(pt_pos.into(), self.drag_offset);
       } else if let DraggingVert::CurCycle(j) = self.dragging_vert {
         self.cur_cycle.as_deref_mut().unwrap()[j] = diff(pt_pos.into(), self.drag_offset);
@@ -279,8 +286,18 @@ impl App {
     }
     if pt2_press {
       if let Some(cyc) = self.cur_cycle.take() {
+        // Commit new cycle
         self.polygons[self.sel_polygon.unwrap()].cycles.push(cyc);
         self.dragging_vert = DraggingVert::None;
+      } else if self.sel_polygon.is_some() {
+        let poly = &mut self.polygons[self.sel_polygon.unwrap()];
+        if let Some((i, j)) = find_vertex(poly) {
+          // Remove vertex
+          poly.cycles[i].remove(j);
+          if poly.cycles[i].is_empty() {
+            poly.cycles.remove(i);
+          }
+        }
       }
     }
   }
