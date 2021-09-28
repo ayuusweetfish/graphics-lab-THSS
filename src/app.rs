@@ -8,6 +8,15 @@ pub struct Polygon {
   cycles: Vec<Vec<(f32, f32)>>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "persistence", serde(default))]
+enum DraggingVert {
+  None,
+  PolygonCycle(usize, usize),
+  CurCycle(usize),
+}
+
 #[derive(Debug)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "persistence", serde(default))]
@@ -22,6 +31,8 @@ pub struct App {
   polygons_collapsed: bool,
 
   cur_cycle: Option<Vec<(f32, f32)>>,
+  dragging_vert: DraggingVert,
+  drag_offset: (f32, f32),
 
   last_added_polygon: bool,
 
@@ -34,8 +45,20 @@ fn rand_khroma() -> [f32; 3] {
   [0.5, 0.5, 1.0]
 }
 
+fn to_rgba32(k: [f32; 3]) -> egui::Color32 {
+  egui::Color32::from_rgb(
+    (k[0] * 255.5) as u8,
+    (k[1] * 255.5) as u8,
+    (k[2] * 255.5) as u8,
+  )
+}
+
 fn dist(a: (f32, f32), b: (f32, f32)) -> f32 {
   ((a.0 - b.0) * (a.0 - b.0) + (a.1 - b.1) * (a.1 - b.1)).sqrt()
+}
+
+fn diff(a: (f32, f32), b: (f32, f32)) -> (f32, f32) {
+  (a.0 - b.0, a.1 - b.1)
 }
 
 impl Default for App {
@@ -54,6 +77,8 @@ impl Default for App {
       polygons_collapsed: false,
 
       cur_cycle: None,
+      dragging_vert: DraggingVert::None,
+      drag_offset: (0.0, 0.0),
 
       last_added_polygon: false,
 
@@ -82,6 +107,7 @@ impl App {
     self.polygons_visible.push(true);
     self.sel_polygon = Some(self.polygons.len() - 1);
     self.cur_cycle = None;
+    self.dragging_vert = DraggingVert::None;
   }
 
   fn process_canvas_interactions(
@@ -94,6 +120,7 @@ impl App {
   ) {
     // Draw polygons
     // TODO
+    /*
     if self.sel_polygon.is_some() && !self.polygons_collapsed {
       painter.add(egui::Shape::circle_filled(
         rect.center(), 480.0, egui::Color32::from_rgb(64, 128, 255)));
@@ -102,14 +129,45 @@ impl App {
         rect.center(), 480.0,
         egui::Stroke::new(6.0, egui::Color32::from_rgb(64, 128, 255))));
     }
+    */
+    for poly in &self.polygons {
+      let kh = to_rgba32(poly.khroma);
+      for (i, cyc) in poly.cycles.iter().enumerate() {
+        // Segments
+        for j in 0..cyc.len() {
+          painter.line_segment(
+            [cyc[j].into(), cyc[(j + 1) % cyc.len()].into()],
+            egui::Stroke::new(6.0, kh),
+          );
+        }
+        // Vertices
+        for j in 0..cyc.len() {
+          painter.circle_filled(cyc[j].into(), 6.0,
+            if self.dragging_vert == DraggingVert::PolygonCycle(i, j) {
+              egui::Color32::from_rgb(255, 192, 128)
+            } else {
+              kh
+            }
+          );
+        }
+      }
+    }
     // Current cycle
     if let Some(cyc) = &self.cur_cycle {
       for vert in cyc {
         painter.circle_filled(
           vert.into(),
           6.0,
-          egui::Color32::from_rgb(128, 255, 64),
+          egui::Color32::from_rgb(128, 192, 64),
         );
+      }
+      for verts in cyc.windows(2) {
+        if let [v1, v2] = verts {
+          painter.line_segment(
+            [v1.into(), v2.into()],
+            egui::Stroke::new(6.0, egui::Color32::from_rgb(128, 192, 64)),
+          );
+        }
       }
     }
 
@@ -148,16 +206,18 @@ impl App {
     // Process events
     if pt1_press { println!("press"); }
     if pt1_rel { println!("release"); }
+    /*
     painter.add(egui::Shape::circle_filled(pt_pos, 10.0,
       if pt1_held { egui::Color32::from_rgb(255, 128, 128) }
       else { egui::Color32::from_rgb(255, 255, 128) }));
+    */
 
+    let poly = &mut self.polygons[self.sel_polygon.unwrap()];
     if pt1_press {
       // Adding new point or dragging?
       let mut dragging = None;
       if self.cur_cycle.is_none() && self.sel_polygon.is_some() {
         // Find a point in the polygon
-        let poly = &self.polygons[self.sel_polygon.unwrap()];
         'outer: for (i, cyc) in poly.cycles.iter().enumerate() {
           for (j, vert) in cyc.iter().enumerate() {
             if dist(*vert, pt_pos.into()) <= 6.0 {
@@ -169,15 +229,31 @@ impl App {
       }
       if let Some((i, j)) = dragging {
         // Dragging
+        self.dragging_vert = DraggingVert::PolygonCycle(i, j);
+        self.drag_offset = diff(pt_pos.into(), poly.cycles[i][j]);
       } else if self.sel_polygon.is_some() {
         // Adding new point
         let cyc = self.cur_cycle.get_or_insert(vec![]);
         cyc.push(pt_pos.into());
+        self.dragging_vert = DraggingVert::CurCycle(cyc.len() - 1);
+        self.drag_offset = (0.0, 0.0);
+      } else {
+        self.dragging_vert = DraggingVert::None;
+        self.drag_offset = (0.0, 0.0);
       }
+    } else if pt1 {
+      if let DraggingVert::PolygonCycle(i, j) = self.dragging_vert {
+        poly.cycles[i][j] = diff(pt_pos.into(), self.drag_offset);
+      } else if let DraggingVert::CurCycle(j) = self.dragging_vert {
+        self.cur_cycle.as_deref_mut().unwrap()[j] = diff(pt_pos.into(), self.drag_offset);
+      }
+    } else if pt1_rel {
+      self.dragging_vert = DraggingVert::None;
     }
     if pt2_press {
       if let Some(cyc) = self.cur_cycle.take() {
         self.polygons[self.sel_polygon.unwrap()].cycles.push(cyc);
+        self.dragging_vert = DraggingVert::None;
       }
     }
   }
@@ -312,6 +388,7 @@ impl epi::App for App {
                       ).clicked() {
                         self.sel_polygon = if sel { None } else { Some(index) };
                         self.cur_cycle = None;
+                        self.dragging_vert = DraggingVert::None;
                       }
                       // Recalculate selection state to avoid UI jumping
                       let sel = match self.sel_polygon {
