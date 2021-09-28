@@ -53,12 +53,27 @@ fn to_rgba32(k: [f32; 3]) -> egui::Color32 {
   )
 }
 
-fn dist(a: (f32, f32), b: (f32, f32)) -> f32 {
-  ((a.0 - b.0) * (a.0 - b.0) + (a.1 - b.1) * (a.1 - b.1)).sqrt()
+fn dist_sq(a: (f32, f32), b: (f32, f32)) -> f32 {
+  ((a.0 - b.0) * (a.0 - b.0) + (a.1 - b.1) * (a.1 - b.1))
 }
-
-fn diff(a: (f32, f32), b: (f32, f32)) -> (f32, f32) {
-  (a.0 - b.0, a.1 - b.1)
+fn dist(a: (f32, f32), b: (f32, f32)) -> f32 { dist_sq(a, b).sqrt() }
+fn diff(a: (f32, f32), b: (f32, f32)) -> (f32, f32) { (a.0 - b.0, a.1 - b.1) }
+fn det(a: (f32, f32), b: (f32, f32)) -> f32 { a.0 * b.1 - a.1 * b.0 }
+fn det3(a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> f32 { det(diff(b, a), diff(c, a)) }
+fn dot(a: (f32, f32), b: (f32, f32)) -> f32 { a.0 * b.0 + a.1 * b.1 }
+fn lerp(a: (f32, f32), b: (f32, f32), t: f32) -> (f32, f32) {
+  (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t)
+}
+fn dist_to_seg(a: (f32, f32), p: (f32, f32), q: (f32, f32)) -> f32 {
+  let l_sq = dist_sq(p, q);
+  if l_sq == 0.0 { return dist(a, p); }
+  let t = dot(diff(a, p), diff(q, p)) / l_sq;
+  let t = match t {
+    f32::MIN..=0.0 => 0.0,
+    1.0..=f32::MAX => 1.0,
+    _ => t,
+  };
+  dist(a, lerp(p, q, t))
 }
 
 impl Default for App {
@@ -222,6 +237,18 @@ impl App {
           for (j, vert) in cyc.iter().enumerate() {
             if dist(*vert, pt_pos.into()) <= 6.0 {
               dragging = Some((i, j));
+              break 'outer;
+            }
+          }
+        }
+      }
+      if dragging.is_none() {
+        // Or creating new point?
+        'outer: for (i, cyc) in poly.cycles.iter_mut().enumerate() {
+          for j in 0..cyc.len() {
+            if dist_to_seg(pt_pos.into(), cyc[j], cyc[(j + 1) % cyc.len()]) <= 6.0 {
+              cyc.insert(j + 1, pt_pos.into());
+              dragging = Some((i, j + 1));
               break 'outer;
             }
           }
