@@ -287,8 +287,10 @@ impl App {
     if pt2_press {
       if let Some(cyc) = self.cur_cycle.take() {
         // Commit new cycle
-        self.polygons[self.sel_polygon.unwrap()].cycles.push(cyc);
-        self.dragging_vert = DraggingVert::None;
+        if cyc.len() >= 3 {
+          self.polygons[self.sel_polygon.unwrap()].cycles.push(cyc);
+          self.dragging_vert = DraggingVert::None;
+        }
       } else if self.sel_polygon.is_some() {
         let poly = &mut self.polygons[self.sel_polygon.unwrap()];
         if let Some((i, j)) = find_vertex(poly) {
