@@ -172,7 +172,7 @@ impl App {
         for j in 0..cyc.len() {
           painter.circle_filled(cyc[j].into(),
             if sel { 6.0 } else { 2.0 },
-            if self.dragging_vert == DraggingVert::PolygonCycle(i, j) {
+            if sel && self.dragging_vert == DraggingVert::PolygonCycle(i, j) {
               egui::Color32::from_rgb(255, 192, 128)
             } else {
               kh
