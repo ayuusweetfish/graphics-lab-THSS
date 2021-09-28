@@ -53,9 +53,9 @@ fn rand_khroma<T: rand::Rng>(rng: &mut T) -> [f32; 3] {
 
 fn to_rgba32(k: [f32; 3]) -> egui::Color32 {
   egui::Color32::from_rgb(
-    (k[0] * 255.5) as u8,
-    (k[1] * 255.5) as u8,
-    (k[2] * 255.5) as u8,
+    egui::color::gamma_u8_from_linear_f32(k[0]),
+    egui::color::gamma_u8_from_linear_f32(k[1]),
+    egui::color::gamma_u8_from_linear_f32(k[2]),
   )
 }
 
