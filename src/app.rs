@@ -1,4 +1,5 @@
 use eframe::{egui, epi};
+use rand::Rng;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
@@ -39,10 +40,15 @@ pub struct App {
   last_rect_popup: [egui::Rect; 2],
   last_pt_down: (bool, bool),
   last_pt_held: (bool, bool),
+
+  rng: rand::rngs::ThreadRng,
 }
 
-fn rand_khroma() -> [f32; 3] {
-  [0.5, 0.5, 1.0]
+fn rand_khroma<T: rand::Rng>(rng: &mut T) -> [f32; 3] {
+  let h = rng.gen_range(0.0..1.0);
+  let s = rng.gen_range(0.4..0.8);
+  let v = rng.gen_range(0.5..0.8);
+  egui::color::rgb_from_hsv((h, s, v))
 }
 
 fn to_rgba32(k: [f32; 3]) -> egui::Color32 {
@@ -83,11 +89,12 @@ fn dist_to_seg(a: (f32, f32), p: (f32, f32), q: (f32, f32)) -> f32 {
 
 impl Default for App {
   fn default() -> Self {
+    let mut rng = rand::thread_rng();
     let mut result = Self {
       dark: false,
 
       intersection_khroma: {
-        let k = rand_khroma();
+        let k = rand_khroma(&mut rng);
         [k[0], k[1], k[2], 0.6]
       },
 
@@ -105,6 +112,8 @@ impl Default for App {
       last_rect_popup: [egui::Rect::NOTHING; 2],
       last_pt_down: (false, false),
       last_pt_held: (false, false),
+
+      rng,
     };
     result.add_polygon();
     result
@@ -121,7 +130,7 @@ impl App {
 
   fn add_polygon(&mut self) {
     self.polygons.push(Polygon {
-      khroma: rand_khroma(),
+      khroma: rand_khroma(&mut self.rng),
       cycles: vec![],
     });
     self.polygons_visible.push(true);
