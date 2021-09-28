@@ -145,19 +145,28 @@ impl App {
         egui::Stroke::new(6.0, egui::Color32::from_rgb(64, 128, 255))));
     }
     */
-    for poly in &self.polygons {
+    for (poly_index, poly) in self.polygons.iter().enumerate() {
       let kh = to_rgba32(poly.khroma);
+      let sel = (self.sel_polygon == Some(poly_index));
       for (i, cyc) in poly.cycles.iter().enumerate() {
         // Segments
         for j in 0..cyc.len() {
           painter.line_segment(
             [cyc[j].into(), cyc[(j + 1) % cyc.len()].into()],
-            egui::Stroke::new(6.0, kh),
+            if sel {
+              egui::Stroke::new(6.0, kh)
+            } else {
+              let [r, g, b, _] = kh.to_array();
+              egui::Stroke::new(4.0, egui::Color32::from_rgba_unmultiplied(
+                r, g, b,
+                128))
+            }
           );
         }
         // Vertices
         for j in 0..cyc.len() {
-          painter.circle_filled(cyc[j].into(), 6.0,
+          painter.circle_filled(cyc[j].into(),
+            if sel { 6.0 } else { 2.0 },
             if self.dragging_vert == DraggingVert::PolygonCycle(i, j) {
               egui::Color32::from_rgb(255, 192, 128)
             } else {
