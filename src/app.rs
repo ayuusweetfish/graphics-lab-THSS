@@ -64,6 +64,11 @@ fn dot(a: (f32, f32), b: (f32, f32)) -> f32 { a.0 * b.0 + a.1 * b.1 }
 fn lerp(a: (f32, f32), b: (f32, f32), t: f32) -> (f32, f32) {
   (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t)
 }
+fn project(a: (f32, f32), p: (f32, f32), q: (f32, f32)) -> (f32, f32) {
+  let l_sq = dist_sq(p, q);
+  let t = dot(diff(a, p), diff(q, p)) / l_sq;
+  lerp(p, q, t)
+}
 fn dist_to_seg(a: (f32, f32), p: (f32, f32), q: (f32, f32)) -> f32 {
   let l_sq = dist_sq(p, q);
   if l_sq == 0.0 { return dist(a, p); }
@@ -259,8 +264,10 @@ impl App {
           // Or creating new point?
           'outer: for (i, cyc) in poly.cycles.iter_mut().enumerate() {
             for j in 0..cyc.len() {
-              if dist_to_seg(pt_pos.into(), cyc[j], cyc[(j + 1) % cyc.len()]) <= 6.0 {
-                cyc.insert(j + 1, pt_pos.into());
+              let p = cyc[j];
+              let q = cyc[(j + 1) % cyc.len()];
+              if dist_to_seg(pt_pos.into(), p, q) <= 6.0 {
+                cyc.insert(j + 1, project(pt_pos.into(), p, q));
                 dragging = Some((i, j + 1));
                 break 'outer;
               }
