@@ -250,45 +250,76 @@ impl App {
       else { egui::Color32::from_rgb(255, 255, 128) }));
     */
 
-    let find_vertex = |poly: &mut Polygon| {
+    let find_vertex_cycle = |cyc: &Vec<(f32, f32)>| {
+      for (j, vert) in cyc.iter().enumerate() {
+        if dist(*vert, pt_pos.into()) <= 6.0 {
+          return Some(j);
+        }
+      }
+      None
+    };
+    let find_vertex = |cycles: &Vec<Vec<(f32, f32)>>| {
       // Find a point in the polygon
-      for (i, cyc) in poly.cycles.iter().enumerate() {
-        for (j, vert) in cyc.iter().enumerate() {
-          if dist(*vert, pt_pos.into()) <= 6.0 {
-            return Some((i, j));
-          }
+      for (i, cyc) in cycles.iter().enumerate() {
+        if let Some(j) = find_vertex_cycle(&cyc) {
+          return Some((i, j));
         }
       }
       None
     };
     if pt1_press {
       // Adding new point or dragging?
-      let mut dragging = None;
+      self.dragging_vert = DraggingVert::None;
       if self.sel_polygon.is_some() {
         let poly = &mut self.polygons[self.sel_polygon.unwrap()];
-        if self.cur_cycle.is_none() {
-          dragging = find_vertex(poly);
-        }
-        if dragging.is_none() {
-          // Or creating new point?
-          'outer: for (i, cyc) in poly.cycles.iter_mut().enumerate() {
+        // XXX: Reduce duplication?
+        if let Some(cyc) = &mut self.cur_cycle {
+          // Editing the temporary cycle
+          // Dragging
+          if let Some(j) = find_vertex_cycle(&cyc) {
+            self.dragging_vert = DraggingVert::CurCycle(j);
+          }
+          if self.dragging_vert == DraggingVert::None {
+            // Creating a new point
             for j in 0..cyc.len() {
               let p = cyc[j];
               let q = cyc[(j + 1) % cyc.len()];
               if dist_to_seg(pt_pos.into(), p, q) <= 6.0 {
                 cyc.insert(j + 1, project(pt_pos.into(), p, q));
-                dragging = Some((i, j + 1));
-                break 'outer;
+                self.dragging_vert = DraggingVert::CurCycle(j + 1);
+                break;
+              }
+            }
+          }
+        } else {
+          // Editing the existing polygon
+          // Dragging
+          if let Some((i, j)) = find_vertex(&mut poly.cycles) {
+            self.dragging_vert = DraggingVert::PolygonCycle(i, j);
+          }
+          if self.dragging_vert == DraggingVert::None {
+            // Creating a new point
+            'outer: for (i, cyc) in poly.cycles.iter_mut().enumerate() {
+              for j in 0..cyc.len() {
+                let p = cyc[j];
+                let q = cyc[(j + 1) % cyc.len()];
+                if dist_to_seg(pt_pos.into(), p, q) <= 6.0 {
+                  cyc.insert(j + 1, project(pt_pos.into(), p, q));
+                  self.dragging_vert = DraggingVert::PolygonCycle(i, j + 1);
+                  break 'outer;
+                }
               }
             }
           }
         }
       }
-      if let Some((i, j)) = dragging {
+      if let DraggingVert::PolygonCycle(i, j) = self.dragging_vert {
         // Dragging
         let poly = &mut self.polygons[self.sel_polygon.unwrap()];
-        self.dragging_vert = DraggingVert::PolygonCycle(i, j);
         self.drag_offset = diff(pt_pos.into(), poly.cycles[i][j]);
+      } else if let DraggingVert::CurCycle(j) = self.dragging_vert {
+        self.dragging_vert = DraggingVert::CurCycle(j);
+        self.drag_offset = diff(pt_pos.into(), self.cur_cycle.as_ref().unwrap()[j]);
       } else if self.sel_polygon.is_some() {
         // Adding new point
         let cyc = self.cur_cycle.get_or_insert(vec![]);
@@ -318,7 +349,7 @@ impl App {
         }
       } else if self.sel_polygon.is_some() {
         let poly = &mut self.polygons[self.sel_polygon.unwrap()];
-        if let Some((i, j)) = find_vertex(poly) {
+        if let Some((i, j)) = find_vertex(&mut poly.cycles) {
           // Remove vertex
           poly.cycles[i].remove(j);
           if poly.cycles[i].is_empty() {
