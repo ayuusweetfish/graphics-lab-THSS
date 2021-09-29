@@ -1,5 +1,6 @@
 use eframe::egui;
 mod app;
+mod intersect;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {

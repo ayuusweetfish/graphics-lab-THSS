@@ -1,5 +1,6 @@
 use eframe::{egui, epi};
 use rand::Rng;
+use crate::intersect;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
@@ -51,12 +52,23 @@ fn rand_khroma<T: rand::Rng>(rng: &mut T) -> [f32; 3] {
   egui::color::rgb_from_hsv((h, s, v))
 }
 
-fn to_rgba32(k: [f32; 3]) -> egui::Color32 {
-  egui::Color32::from_rgb(
-    egui::color::gamma_u8_from_linear_f32(k[0]),
-    egui::color::gamma_u8_from_linear_f32(k[1]),
-    egui::color::gamma_u8_from_linear_f32(k[2]),
-  )
+fn to_rgba32<const N: usize>(k: [f32; N]) -> egui::Color32 {
+  if N == 3 {
+    egui::Color32::from_rgb(
+      egui::color::gamma_u8_from_linear_f32(k[0]),
+      egui::color::gamma_u8_from_linear_f32(k[1]),
+      egui::color::gamma_u8_from_linear_f32(k[2]),
+    )
+  } else if N == 4 {
+    egui::Color32::from_rgba_unmultiplied(
+      egui::color::gamma_u8_from_linear_f32(k[0]),
+      egui::color::gamma_u8_from_linear_f32(k[1]),
+      egui::color::gamma_u8_from_linear_f32(k[2]),
+      egui::color::linear_u8_from_linear_f32(k[3]),
+    )
+  } else {
+    unimplemented!()
+  }
 }
 
 fn dist_sq(a: (f32, f32), b: (f32, f32)) -> f32 {
@@ -188,6 +200,29 @@ impl App {
             }
           );
         }
+      }
+    }
+    // Intersection
+    let intersection_polygons: Vec<&Vec<Vec<(f32, f32)>>> =
+      self.polygons.iter().zip(self.polygons_visible.iter())
+        .filter(|(_, &visible)| visible)
+        .map(|(polygon, _)| &polygon.cycles)
+        .collect();
+    // println!("{:?}", intersection_polygons);
+    let intersection = intersect::calculate(&intersection_polygons);
+    let intersection_kh = to_rgba32(self.intersection_khroma);
+    let intersection_kh_opaque = intersection_kh.to_opaque();
+    for (i, cyc) in intersection.iter().enumerate() {
+      for j in 0..cyc.len() {
+        painter.line_segment(
+          [cyc[j].into(), cyc[(j + 1) % cyc.len()].into()],
+          egui::Stroke::new(6.0, intersection_kh_opaque),
+        );
+      }
+      for j in 0..cyc.len() {
+        painter.circle_filled(cyc[j].into(),
+          6.0, intersection_kh_opaque,
+        );
       }
     }
     // Current cycle
