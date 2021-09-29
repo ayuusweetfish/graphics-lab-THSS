@@ -1,6 +1,6 @@
 use eframe::{egui, epi};
 use rand::Rng;
-use crate::intersect;
+use crate::geom::*;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "persistence", derive(serde::Serialize, serde::Deserialize))]
@@ -71,32 +71,29 @@ fn to_rgba32<const N: usize>(k: [f32; N]) -> egui::Color32 {
   }
 }
 
-fn dist_sq(a: (f32, f32), b: (f32, f32)) -> f32 {
-  ((a.0 - b.0) * (a.0 - b.0) + (a.1 - b.1) * (a.1 - b.1))
-}
-fn dist(a: (f32, f32), b: (f32, f32)) -> f32 { dist_sq(a, b).sqrt() }
-fn diff(a: (f32, f32), b: (f32, f32)) -> (f32, f32) { (a.0 - b.0, a.1 - b.1) }
-fn det(a: (f32, f32), b: (f32, f32)) -> f32 { a.0 * b.1 - a.1 * b.0 }
-fn det3(a: (f32, f32), b: (f32, f32), c: (f32, f32)) -> f32 { det(diff(b, a), diff(c, a)) }
-fn dot(a: (f32, f32), b: (f32, f32)) -> f32 { a.0 * b.0 + a.1 * b.1 }
-fn lerp(a: (f32, f32), b: (f32, f32), t: f32) -> (f32, f32) {
-  (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t)
-}
-fn project(a: (f32, f32), p: (f32, f32), q: (f32, f32)) -> (f32, f32) {
-  let l_sq = dist_sq(p, q);
-  let t = dot(diff(a, p), diff(q, p)) / l_sq;
-  lerp(p, q, t)
-}
-fn dist_to_seg(a: (f32, f32), p: (f32, f32), q: (f32, f32)) -> f32 {
-  let l_sq = dist_sq(p, q);
-  if l_sq == 0.0 { return dist(a, p); }
-  let t = dot(diff(a, p), diff(q, p)) / l_sq;
-  let t = match t {
-    f32::MIN..=0.0 => 0.0,
-    1.0..=f32::MAX => 1.0,
-    _ => t,
-  };
-  dist(a, lerp(p, q, t))
+fn fill_polygon(painter: &egui::Painter, polygon: &[Vec<(f32, f32)>]) {
+  // Split the polygon into disjoint components
+  let comps = normalize_polygon(polygon);
+  for comp in comps {
+    let v: Vec<_> =
+      comp.iter().map(|v| v.iter().map(|&(a, b)| vec![a, b]).collect()).collect();
+    if v.is_empty() { continue; }
+    let (verts, holes, dims) = earcutr::flatten(&v);
+    let tris = earcutr::earcut(&verts, &holes, dims);
+    for tri in tris.chunks_exact(3) {
+      assert!(tri.len() == 3);
+      // Fill a triangle
+      painter.add(egui::Shape::convex_polygon(
+        vec![
+          (verts[tri[0] * 2], verts[tri[0] * 2 + 1]).into(),
+          (verts[tri[1] * 2], verts[tri[1] * 2 + 1]).into(),
+          (verts[tri[2] * 2], verts[tri[2] * 2 + 1]).into(),
+        ],
+        egui::Color32::from_rgb(255, 128, 128),
+        egui::Stroke::none(),
+      ));
+    }
+  }
 }
 
 impl Default for App {
@@ -209,9 +206,12 @@ impl App {
         .map(|(polygon, _)| &polygon.cycles)
         .collect();
     // println!("{:?}", intersection_polygons);
-    let intersection = intersect::calculate(&intersection_polygons);
+    let intersection = intersection(&intersection_polygons);
     let intersection_kh = to_rgba32(self.intersection_khroma);
     let intersection_kh_opaque = intersection_kh.to_opaque();
+    // Fill
+    fill_polygon(&painter, &intersection);
+    // Outline
     for (i, cyc) in intersection.iter().enumerate() {
       for j in 0..cyc.len() {
         painter.line_segment(
@@ -393,6 +393,13 @@ impl App {
         }
       }
     }
+
+    /*
+    if !self.polygons.is_empty() && !self.polygons[0].cycles.is_empty() {
+      let inside = point_in_simple_polygon(pt_pos.into(), &self.polygons[0].cycles[0]);
+      println!("{}", inside);
+    }
+    */
   }
 }
 

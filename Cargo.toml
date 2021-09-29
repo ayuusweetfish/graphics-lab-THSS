@@ -9,6 +9,7 @@ edition = "2021"
 eframe = { version = "0.14.0", default-features = false }
 serde = { version = "*", optional = true }
 rand = "0.8"
+earcutr = "0.2.0"
 
 [features]
 default = []
