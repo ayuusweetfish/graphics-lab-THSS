@@ -167,6 +167,14 @@ fn intersection_two(polygons: [&[Vec<(f32, f32)>]; 2]) -> Vec<Vec<(f32, f32)>> {
     normalized_polygons.push(poly);
   }
 
+  // Set of untouched cycles
+  let mut cycles_untouched = std::collections::HashSet::new();
+  for (i, poly) in polygons.iter().enumerate() {
+    for j in 0..poly.len() {
+      cycles_untouched.insert((i, j));
+    }
+  }
+
   // Find out all intersections and build vertex lists
   #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
   enum Vertex {
@@ -198,6 +206,7 @@ fn intersection_two(polygons: [&[Vec<(f32, f32)>]; 2]) -> Vec<Vec<(f32, f32)>> {
           (det3(segs[seg1_index].0, p, segs[seg2_index].1) >= 0.0)
           ^ (i1 == 0));
         real_intxns_unvisited.insert((min_index, max_index));
+        cycles_untouched.remove(&(i1, j1));
       }
     }
     from_other_with_seg1.sort_by(
@@ -245,6 +254,22 @@ fn intersection_two(polygons: [&[Vec<(f32, f32)>]; 2]) -> Vec<Vec<(f32, f32)>> {
     }
     // println!("-- {}", real_intxns_unvisited.len());
     result_cycles.push(cur_cycle);
+  }
+
+  // Check untouched cycles for containment
+  for (i, j) in cycles_untouched.drain() {
+    // Is `cyc` contained in the other polygon?
+    // If any one of its vertices is, then the entire cycle is
+    let p = normalized_polygons[i][j][0];
+    let mut outer_count = 0;
+    for cyc in &normalized_polygons[1 - i] {
+      if point_in_simple_polygon(p, cyc) {
+        outer_count += 1;
+      }
+    }
+    if outer_count % 2 == 1 {
+      result_cycles.push(normalized_polygons[i][j].clone());
+    }
   }
 
   result_cycles
