@@ -42,13 +42,15 @@ pub struct App {
   last_pt_down: (bool, bool),
   last_pt_held: (bool, bool),
 
-  rng: rand::rngs::ThreadRng,
+  rng: (rand::rngs::ThreadRng, f32),
 }
 
-fn rand_khroma<T: rand::Rng>(rng: &mut T) -> [f32; 3] {
-  let h = rng.gen_range(0.0..1.0);
+fn rand_khroma<T: rand::Rng>(rng: &mut (T, f32)) -> [f32; 3] {
+  let (rng, last) = rng;
+  let h = rng.gen_range((*last + 0.2)..(*last + 0.8)) % 1.0;
   let s = rng.gen_range(0.4..0.8);
   let v = rng.gen_range(0.5..0.8);
+  *last = h;
   egui::color::rgb_from_hsv((h, s, v))
 }
 
@@ -71,7 +73,7 @@ fn to_rgba32<const N: usize>(k: [f32; N]) -> egui::Color32 {
   }
 }
 
-fn fill_polygon(painter: &egui::Painter, polygon: &[Vec<(f32, f32)>]) {
+fn fill_polygon(painter: &egui::Painter, polygon: &[Vec<(f32, f32)>], kh: egui::Color32) {
   // Split the polygon into disjoint components
   let comps = normalize_polygon(polygon);
   for comp in comps {
@@ -89,7 +91,7 @@ fn fill_polygon(painter: &egui::Painter, polygon: &[Vec<(f32, f32)>]) {
           (verts[tri[1] * 2], verts[tri[1] * 2 + 1]).into(),
           (verts[tri[2] * 2], verts[tri[2] * 2 + 1]).into(),
         ],
-        egui::Color32::from_rgb(255, 128, 128),
+        kh,
         egui::Stroke::none(),
       ));
     }
@@ -98,7 +100,7 @@ fn fill_polygon(painter: &egui::Painter, polygon: &[Vec<(f32, f32)>]) {
 
 impl Default for App {
   fn default() -> Self {
-    let mut rng = rand::thread_rng();
+    let mut rng = (rand::thread_rng(), 0.0);
     let mut result = Self {
       dark: false,
 
@@ -171,6 +173,11 @@ impl App {
     for (poly_index, poly) in self.polygons.iter().enumerate() {
       let kh = to_rgba32(poly.khroma);
       let sel = (self.sel_polygon == Some(poly_index));
+      // Fill if currently selected
+      if sel /*&& !self.polygons_visible.iter().any(|&visible| visible)*/ {
+        fill_polygon(&painter, &poly.cycles,
+          to_rgba32([poly.khroma[0], poly.khroma[1], poly.khroma[2], 0.6]));
+      }
       for (i, cyc) in poly.cycles.iter().enumerate() {
         // Segments
         for j in 0..cyc.len() {
@@ -210,18 +217,18 @@ impl App {
     let intersection_kh = to_rgba32(self.intersection_khroma);
     let intersection_kh_opaque = intersection_kh.to_opaque();
     // Fill
-    fill_polygon(&painter, &intersection);
+    fill_polygon(&painter, &intersection, intersection_kh);
     // Outline
     for (i, cyc) in intersection.iter().enumerate() {
       for j in 0..cyc.len() {
         painter.line_segment(
           [cyc[j].into(), cyc[(j + 1) % cyc.len()].into()],
-          egui::Stroke::new(6.0, intersection_kh_opaque),
+          egui::Stroke::new(3.0, intersection_kh_opaque),
         );
       }
       for j in 0..cyc.len() {
         painter.circle_filled(cyc[j].into(),
-          6.0, intersection_kh_opaque,
+          3.0, intersection_kh_opaque,
         );
       }
     }
