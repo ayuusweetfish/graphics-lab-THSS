@@ -25,6 +25,7 @@ pub fn dist_to_seg(a: (f32, f32), p: (f32, f32), q: (f32, f32)) -> f32 {
   };
   dist(a, lerp(p, q, t))
 }
+// Open segments, i.e. intersections at endpoints are not considered
 pub fn seg_intxn(
   a: ((f32, f32), (f32, f32)),
   b: ((f32, f32), (f32, f32)),
@@ -35,7 +36,7 @@ pub fn seg_intxn(
   if d == 0.0 { return None; }
   let ta = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / d;
   let tb = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / d;
-  if ta >= 0.0 && ta <= 1.0 && tb >= 0.0 && tb <= 1.0 {
+  if ta > 0.0 && ta < 1.0 && tb > 0.0 && tb < 1.0 {
     Some(lerp((x1, y1), (x2, y2), ta))
   } else {
     None
@@ -116,7 +117,7 @@ pub fn normalize_polygon(cycles: &[Vec<(f32, f32)>])
 
 // Each vector returned corresponds to one segment in the input
 // in the input order
-fn all_segment_intersections(segs: &[((f32, f32), (f32, f32))])
+pub fn all_segment_intersections(segs: &[((f32, f32), (f32, f32))])
 -> Vec<Vec<(usize, (f32, f32))>> {
   // TODO: Optimize
   let mut result = vec![];

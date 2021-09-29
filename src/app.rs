@@ -158,23 +158,26 @@ impl App {
     resp: egui::Response,
     input: &egui::InputState,
   ) {
+    let mut self_intxns_any = false;
     // Draw polygons
-    // TODO
-    /*
-    if self.sel_polygon.is_some() && !self.polygons_collapsed {
-      painter.add(egui::Shape::circle_filled(
-        rect.center(), 480.0, egui::Color32::from_rgb(64, 128, 255)));
-    } else {
-      painter.add(egui::Shape::circle_stroke(
-        rect.center(), 480.0,
-        egui::Stroke::new(6.0, egui::Color32::from_rgb(64, 128, 255))));
-    }
-    */
     for (poly_index, poly) in self.polygons.iter().enumerate() {
+      // Check for self-intersections
+      // Find out all segments
+      let mut segs = vec![];
+      for cyc in &poly.cycles {
+        for j in 0..cyc.len() {
+          segs.push((cyc[j].into(), cyc[(j + 1) % cyc.len()].into()));
+        }
+      }
+      let self_intxns = all_segment_intersections(&segs);
+      let self_intxns_cur = self_intxns.iter().any(|x| !x.is_empty());
+      self_intxns_any |= self_intxns_cur;
+
+      // Draw
       let kh = to_rgba32(poly.khroma);
       let sel = (self.sel_polygon == Some(poly_index));
       // Fill if currently selected
-      if sel /*&& !self.polygons_visible.iter().any(|&visible| visible)*/ {
+      if !self_intxns_cur && sel {
         fill_polygon(&painter, &poly.cycles,
           to_rgba32([poly.khroma[0], poly.khroma[1], poly.khroma[2], 0.6]));
       }
@@ -205,31 +208,46 @@ impl App {
           );
         }
       }
+
+      // Self-intersections highlighting
+      if self_intxns_cur {
+        let kh = egui::Color32::from_rgb(255, 144, 128);
+        for (i, with_i) in self_intxns.iter().enumerate() {
+          for &(j, p) in with_i {
+            if j > i {
+              painter.circle_filled(p.into(), 6.0, kh);
+              painter.circle_stroke(p.into(), 9.0, (2.0, kh));
+            }
+          }
+        }
+      }
     }
     // Intersection
-    let intersection_polygons: Vec<&Vec<Vec<(f32, f32)>>> =
-      self.polygons.iter().zip(self.polygons_visible.iter())
-        .filter(|(_, &visible)| visible)
-        .map(|(polygon, _)| &polygon.cycles)
-        .collect();
-    // println!("{:?}", intersection_polygons);
-    let intersection = intersection(&intersection_polygons);
-    let intersection_kh = to_rgba32(self.intersection_khroma);
-    let intersection_kh_opaque = intersection_kh.to_opaque();
-    // Fill
-    fill_polygon(&painter, &intersection, intersection_kh);
-    // Outline
-    for (i, cyc) in intersection.iter().enumerate() {
-      for j in 0..cyc.len() {
-        painter.line_segment(
-          [cyc[j].into(), cyc[(j + 1) % cyc.len()].into()],
-          egui::Stroke::new(3.0, intersection_kh_opaque),
-        );
-      }
-      for j in 0..cyc.len() {
-        painter.circle_filled(cyc[j].into(),
-          3.0, intersection_kh_opaque,
-        );
+    if !self_intxns_any {
+      let intersection_polygons: Vec<&Vec<Vec<(f32, f32)>>> =
+        self.polygons.iter().zip(self.polygons_visible.iter())
+          .filter(|(_, &visible)| visible)
+          .map(|(polygon, _)| &polygon.cycles)
+          .collect();
+      // println!("{:?}", intersection_polygons);
+      let intersection = intersection(&intersection_polygons);
+      let intersection_kh = to_rgba32(self.intersection_khroma);
+      let intersection_kh_opaque = intersection_kh.to_opaque();
+      // Fill
+      fill_polygon(&painter, &intersection, intersection_kh);
+      // Outline
+      for (i, cyc) in intersection.iter().enumerate() {
+        for j in 0..cyc.len() {
+          painter.line_segment(
+            [cyc[j].into(), cyc[(j + 1) % cyc.len()].into()],
+            egui::Stroke::new(3.0, intersection_kh_opaque),
+          );
+        }
+        for j in 0..cyc.len() {
+          painter.circle_filled(cyc[j].into(),
+            3.0, intersection_kh_opaque,
+          );
+        }
       }
     }
     // Current cycle
