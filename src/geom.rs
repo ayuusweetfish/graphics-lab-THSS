@@ -96,14 +96,14 @@ pub fn normalize_polygon(cycles: &[Vec<(f32, f32)>])
   let mut comps = vec![];
   let mut comp_index = vec![0; n];
   for i in 0..n {
-    if outer[i].len() % 2 == 0 {
+    if cycles[i].len() > 2 && outer[i].len() % 2 == 0 {
       // Outer boundary
       comps.push(vec![normalize_dir(&cycles[i], true)]);
       comp_index[i] = comps.len() - 1;
     }
   }
   for i in 0..n {
-    if outer[i].len() % 2 == 1 {
+    if cycles[i].len() > 2 && outer[i].len() % 2 == 1 {
       // Inner boundary
       // Find out the smallest outer cycle
       let (_, innermost) = outer[i].iter()
@@ -140,7 +140,7 @@ pub fn intersection(polygons: &[&Vec<Vec<(f32, f32)>>]) -> Vec<Vec<(f32, f32)>> 
     vec![]
   } else {
     polygons.iter().skip(1).fold(
-      polygons[0].clone(),
+      normalize_polygon(polygons[0]).into_iter().flatten().collect(),
       |a, &b| intersection_two([&a, b])
     )
   }
@@ -157,7 +157,7 @@ fn intersection_two(polygons: [&[Vec<(f32, f32)>]; 2]) -> Vec<Vec<(f32, f32)>> {
     // Into Vec<components: Vec<cycles: Vec<points>>>
     let poly = normalize_polygon(poly);
     // Into Vec<cycles: Vec<points>>
-    let poly = poly.iter().flatten().map(|x| x.clone()).collect::<Vec<_>>();
+    let poly = poly.into_iter().flatten().collect::<Vec<_>>();
     for (j, cyc) in poly.iter().enumerate() {
       for k in 0..cyc.len() {
         // Tag: (polygon index (0/1), cycle index, vertex index)
@@ -170,7 +170,7 @@ fn intersection_two(polygons: [&[Vec<(f32, f32)>]; 2]) -> Vec<Vec<(f32, f32)>> {
 
   // Set of untouched cycles
   let mut cycles_untouched = std::collections::HashSet::new();
-  for (i, poly) in polygons.iter().enumerate() {
+  for (i, poly) in normalized_polygons.iter().enumerate() {
     for j in 0..poly.len() {
       cycles_untouched.insert((i, j));
     }
