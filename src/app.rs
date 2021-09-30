@@ -318,7 +318,7 @@ impl App {
       }
       None
     };
-    if pt1_press {
+    if pt1_press && !self.polygons_collapsed {
       // Adding new point or dragging?
       self.dragging_vert = DraggingVert::None;
       if self.sel_polygon.is_some() {
