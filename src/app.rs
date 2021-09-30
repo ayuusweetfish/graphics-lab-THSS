@@ -174,7 +174,7 @@ impl App {
 
       // Draw
       let kh = to_rgba32(poly.khroma);
-      let sel = self.sel_polygon == Some(poly_index);
+      let sel = (self.sel_polygon == Some(poly_index)) && !self.polygons_collapsed;
       // Fill if currently selected
       if !self_intxns_cur && sel {
         fill_polygon(&painter, &poly.cycles,
