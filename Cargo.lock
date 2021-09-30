@@ -465,8 +465,6 @@ dependencies = [
 [[package]]
 name = "eframe"
 version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aeeebd536f1a2737661be42819ed58a7aac69a4bf061610b373467f886574e6"
 dependencies = [
  "egui",
  "egui_glium",
@@ -477,8 +475,6 @@ dependencies = [
 [[package]]
 name = "egui"
 version = "0.14.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b403f29d592b5c2267279bfdf2cd3fe3ba0e7a8738d03203a6f1536e8e9d26bd"
 dependencies = [
  "epaint",
  "ron",
@@ -486,26 +482,32 @@ dependencies = [
 ]
 
 [[package]]
-name = "egui_glium"
+name = "egui-winit"
 version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "972b1882ae98f7dd2f5dcbf5efeb35448c158a8f6ba80d6cc3b8073eae1fae4f"
 dependencies = [
  "copypasta",
+ "egui",
+ "epi",
+ "webbrowser",
+ "winit",
+]
+
+[[package]]
+name = "egui_glium"
+version = "0.14.0"
+dependencies = [
  "directories-next",
  "egui",
+ "egui-winit",
  "epi",
  "glium",
  "ron",
  "serde",
- "webbrowser",
 ]
 
 [[package]]
 name = "egui_web"
 version = "0.14.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a70a7eee03a31589660cbfefa5ac529b9740b008d94075c46fd29f80abfad9de"
 dependencies = [
  "egui",
  "epi",
@@ -520,8 +522,6 @@ dependencies = [
 [[package]]
 name = "emath"
 version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cca5179aa9d15128cebb79bb56dda73a79cc66b402056ff19a992e54b365e15c"
 dependencies = [
  "serde",
 ]
@@ -529,22 +529,18 @@ dependencies = [
 [[package]]
 name = "epaint"
 version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "136e7d88da926182bcfdb8217137dd347dfe5dc03b8988eaba3ef8becf83394a"
 dependencies = [
  "ab_glyph",
  "ahash",
  "atomic_refcell",
  "emath",
- "ordered-float",
+ "nohash-hasher",
  "serde",
 ]
 
 [[package]]
 name = "epi"
 version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3c033c9b4d921566a98b8831b63af5ba2a0ad7ffa62d22b897698f36c22a28a"
 dependencies = [
  "egui",
  "ron",
@@ -944,6 +940,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "nohash-hasher"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
+
+[[package]]
 name = "nom"
 version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1037,15 +1039,6 @@ name = "once_cell"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "692fcb63b64b1758029e0a96ee63e049ce8c5948587f2f7208df04625e5f6b56"
-
-[[package]]
-name = "ordered-float"
-version = "2.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97c9d06878b3a851e8026ef94bf7fef9ba93062cd412601da4d9cf369b1cc62d"
-dependencies = [
- "num-traits",
-]
 
 [[package]]
 name = "osmesa-sys"

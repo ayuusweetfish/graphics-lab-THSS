@@ -156,6 +156,7 @@ impl App {
     exclude: &[egui::Rect],
     _resp: egui::Response,
     input: &egui::InputState,
+    popup: bool,
   ) {
     let mut self_intxns_any = false;
     // Draw polygons
@@ -299,6 +300,10 @@ impl App {
     if excluded && (!last_pt1_held && !last_pt2_held) { return; }
 
     let (pt1_held, pt2_held) = self.last_pt_held;
+
+    // Ignore presses if popup is open
+    let pt1_press = pt1_press && !popup;
+    let pt2_press = pt2_press && !popup;
 
     // Process events
     let find_vertex_cycle = |cyc: &Vec<(f32, f32)>| {
@@ -496,6 +501,7 @@ impl epi::App for App {
         &exclude,
         ui.allocate_rect(rect_painter, egui::Sense::hover()),
         ui.input(),
+        ui.memory().is_any_popup_open(),
       );
 
       let rect_popup = egui::Rect::from_min_size(

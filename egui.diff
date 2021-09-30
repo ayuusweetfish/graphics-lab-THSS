@@ -1,0 +1,15 @@
+diff --git a/egui/src/memory.rs b/egui/src/memory.rs
+index ea0052c..d54b19b 100644
+--- a/egui/src/memory.rs
++++ b/egui/src/memory.rs
+@@ -391,6 +391,10 @@ impl Memory {
+         self.popup == Some(popup_id) || self.everything_is_visible()
+     }
+ 
++    pub fn is_any_popup_open(&mut self) -> bool {
++        self.popup.is_some() || self.everything_is_visible()
++    }
++
+     pub fn open_popup(&mut self, popup_id: Id) {
+         self.popup = Some(popup_id);
+     }

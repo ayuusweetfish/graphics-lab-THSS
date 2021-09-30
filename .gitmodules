@@ -1,0 +1,3 @@
+[submodule "egui"]
+	path = egui
+	url = https://github.com/emilk/egui.git
