@@ -11,6 +11,12 @@ serde = { version = "*", optional = true }
 rand = "0.8"
 earcutr = "0.2.0"
 
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { version = "*", features = ["js"] }
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [features]
 default = []
 persistence = ["eframe/persistence", "serde"]

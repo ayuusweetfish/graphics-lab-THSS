@@ -1,1 +1,3 @@
 /target
+/web/*.js
+/web/*.wasm
