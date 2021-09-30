@@ -1,5 +1,4 @@
 use eframe::{egui, epi};
-use rand::Rng;
 use crate::geom::*;
 
 #[derive(Debug)]
@@ -155,7 +154,7 @@ impl App {
     painter: egui::Painter,
     rect: egui::Rect,
     exclude: &[egui::Rect],
-    resp: egui::Response,
+    _resp: egui::Response,
     input: &egui::InputState,
   ) {
     let mut self_intxns_any = false;
@@ -175,7 +174,7 @@ impl App {
 
       // Draw
       let kh = to_rgba32(poly.khroma);
-      let sel = (self.sel_polygon == Some(poly_index));
+      let sel = self.sel_polygon == Some(poly_index);
       // Fill if currently selected
       if !self_intxns_cur && sel {
         fill_polygon(&painter, &poly.cycles,
@@ -236,7 +235,7 @@ impl App {
       // Fill
       fill_polygon(&painter, &intersection, intersection_kh);
       // Outline
-      for (i, cyc) in intersection.iter().enumerate() {
+      for cyc in intersection {
         for j in 0..cyc.len() {
           painter.line_segment(
             [cyc[j].into(), cyc[(j + 1) % cyc.len()].into()],
@@ -302,14 +301,6 @@ impl App {
     let (pt1_held, pt2_held) = self.last_pt_held;
 
     // Process events
-    if pt1_press { println!("press"); }
-    if pt1_rel { println!("release"); }
-    /*
-    painter.add(egui::Shape::circle_filled(pt_pos, 10.0,
-      if pt1_held { egui::Color32::from_rgb(255, 128, 128) }
-      else { egui::Color32::from_rgb(255, 255, 128) }));
-    */
-
     let find_vertex_cycle = |cyc: &Vec<(f32, f32)>| {
       for (j, vert) in cyc.iter().enumerate() {
         if dist(*vert, pt_pos.into()) <= 6.0 {
@@ -419,12 +410,7 @@ impl App {
       }
     }
 
-    /*
-    if !self.polygons.is_empty() && !self.polygons[0].cycles.is_empty() {
-      let inside = point_in_simple_polygon(pt_pos.into(), &self.polygons[0].cycles[0]);
-      println!("{}", inside);
-    }
-    */
+    let (_, _, _) = (pt2_rel, pt1_held, pt2_held);
   }
 }
 
@@ -435,7 +421,7 @@ impl epi::App for App {
 
   fn setup(
     &mut self, ctx: &egui::CtxRef, _frame: &mut epi::Frame<'_>,
-    storage: Option<&dyn epi::Storage>,
+    _storage: Option<&dyn epi::Storage>,
   ) {
     let mut fonts = egui::FontDefinitions::default();
     fonts.font_data.insert(
@@ -474,7 +460,7 @@ impl epi::App for App {
     self.update_theme(ctx);
 
     #[cfg(feature = "persistence")]
-    if let Some(storage) = storage {
+    if let Some(storage) = _storage {
       *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default()
     }
   }

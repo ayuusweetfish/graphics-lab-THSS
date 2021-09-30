@@ -1,5 +1,5 @@
 pub fn dist_sq(a: (f32, f32), b: (f32, f32)) -> f32 {
-  ((a.0 - b.0) * (a.0 - b.0) + (a.1 - b.1) * (a.1 - b.1))
+  (a.0 - b.0) * (a.0 - b.0) + (a.1 - b.1) * (a.1 - b.1)
 }
 pub fn dist(a: (f32, f32), b: (f32, f32)) -> f32 { dist_sq(a, b).sqrt() }
 pub fn diff(a: (f32, f32), b: (f32, f32)) -> (f32, f32) { (a.0 - b.0, a.1 - b.1) }
@@ -18,11 +18,7 @@ pub fn dist_to_seg(a: (f32, f32), p: (f32, f32), q: (f32, f32)) -> f32 {
   let l_sq = dist_sq(p, q);
   if l_sq == 0.0 { return dist(a, p); }
   let t = dot(diff(a, p), diff(q, p)) / l_sq;
-  let t = match t {
-    f32::MIN..=0.0 => 0.0,
-    1.0..=f32::MAX => 1.0,
-    _ => t,
-  };
+  let t = t.clamp(0.0, 1.0);
   dist(a, lerp(p, q, t))
 }
 // Open segments, i.e. intersections at endpoints are not considered
@@ -181,7 +177,7 @@ fn intersection_two(polygons: [&[Vec<(f32, f32)>]; 2]) -> Vec<Vec<(f32, f32)>> {
   enum Vertex {
     Polygon(usize, usize, usize), // (polygon index, cycle index, vertex index)
     Intersection(usize, usize),   // (smaller segment index, larger segment index)
-  };
+  }
   use Vertex::*;
   let intxns = all_segment_intersections(&segs);
   let mut intxns_coords = std::collections::HashMap::new();
@@ -196,7 +192,7 @@ fn intersection_two(polygons: [&[Vec<(f32, f32)>]; 2]) -> Vec<Vec<(f32, f32)>> {
     let (i1, j1, k1) = segs_origin[seg1_index];
     let mut from_other_with_seg1 = vec![];
     for &(seg2_index, p) in with_seg1 {
-      let (i2, j2, k2) = segs_origin[seg2_index];
+      let (i2, _, _) = segs_origin[seg2_index];
       if i1 != i2 {
         // Intersection between two polygons
         let min_index = seg1_index.min(seg2_index);
