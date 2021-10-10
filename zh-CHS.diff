@@ -1,0 +1,85 @@
+diff --git a/src/app.rs b/src/app.rs
+index f5f3752..2a9768a 100644
+--- a/src/app.rs
++++ b/src/app.rs
+@@ -297,10 +297,10 @@ impl App {
+     painter.extend(self.canvas_shapes_cache.clone());
+ 
+     const GUIDE_STRINGS: [&'static str; 4] = [
+-      "Left click to add at least 3 points",
+-      "Right click anywhere to close the ring",
+-      "Similarly add another ring for the same polygon",
+-      "In the top-left panel, create a new polygon and see their intersection",
++      "左键点击，绘制至少 3 个点",
++      "右键在任意处点击，闭合环路",
++      "以同样的方式绘制另一个环",
++      "在左上角的面板中增加一个多边形，之后即求出二者的交",
+     ];
+     if self.guide < 4 {
+       painter.text(
+@@ -571,19 +571,19 @@ impl epi::App for App {
+           )
+           .show(ui, |ui| {
+             ui.set_max_width(width);
+-            if egui::CollapsingHeader::new("Polygons").default_open(true).show(ui, |ui| {
++            if egui::CollapsingHeader::new("多边形").default_open(true).show(ui, |ui| {
+               let mut polygon_remove = None;
+               ui.allocate_ui(egui::vec2(180.0, 240.0), |ui| {
+                 egui::ScrollArea::vertical().show(ui, |ui| {
+                   ui.horizontal(|ui| {
+                     ui.add_sized(
+                       egui::vec2(160.0, ui.style().spacing.interact_size.y),
+-                      egui::Label::new("Intersection"),
++                      egui::Label::new("交集"),
+                     );
+                     ui.color_edit_button_rgba_unmultiplied(&mut self.intersection_khroma);
+                     let any_visible = self.polygons_visible.iter().any(|x| *x);
+                     if ui.selectable_label(any_visible, "○")
+-                         .on_hover_text("Visibility").clicked() {
++                         .on_hover_text("可见").clicked() {
+                       for value in self.polygons_visible.iter_mut() {
+                         *value = !any_visible;
+                       }
+@@ -599,7 +599,7 @@ impl epi::App for App {
+                       if ui.add_sized(
+                         egui::vec2(160.0, ui.style().spacing.interact_size.y),
+                         egui::SelectableLabel::new(sel,
+-                          format!("#{} ({} vert, {} ring)",
++                          format!("#{} ({} 个顶点, {} 个环)",
+                             index + 1,
+                             poly.cycles.iter().map(|c| c.len()).sum::<usize>(),
+                             poly.cycles.len(),
+@@ -617,13 +617,13 @@ impl epi::App for App {
+                       };
+                       ui.color_edit_button_rgb(&mut poly.khroma);
+                       if ui.selectable_label(self.polygons_visible[index], "○")
+-                           .on_hover_text("Visibility").clicked() {
++                           .on_hover_text("可见").clicked() {
+                         self.polygons_visible[index] = !self.polygons_visible[index];
+                         self.canvas_shapes_obsolete = true;
+                       }
+                       if sel {
+                         if ui.selectable_label(false, "×")
+-                             .on_hover_text("Remove").clicked() {
++                             .on_hover_text("移除").clicked() {
+                           polygon_remove = Some(index);
+                           self.canvas_shapes_obsolete = true;
+                         }
+@@ -650,7 +650,7 @@ impl epi::App for App {
+               }
+               if ui.add_sized(
+                 egui::vec2(211.0, ui.style().spacing.interact_size.y),
+-                egui::Button::new("☆ new")).clicked()
++                egui::Button::new("☆ 增加")).clicked()
+               {
+                 self.add_polygon();
+                 self.last_added_polygon = true;
+@@ -683,7 +683,7 @@ impl epi::App for App {
+           )
+           .show(ui, |ui| {
+             ui.set_max_width(width);
+-            if ui.selectable_label(false, "dark/light").clicked() {
++            if ui.selectable_label(false, "浅色/深色").clicked() {
+               self.dark = !self.dark;
+               self.update_theme(ctx);
+             }
