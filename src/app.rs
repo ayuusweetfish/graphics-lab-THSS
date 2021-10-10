@@ -46,6 +46,8 @@ pub struct App {
 
   canvas_shapes_cache: Vec<egui::Shape>,
   canvas_shapes_obsolete: bool,
+
+  guide: usize,
 }
 
 fn rand_khroma<T: rand::Rng>(rng: &mut (T, f32)) -> [f32; 3] {
@@ -132,6 +134,8 @@ impl Default for App {
 
       canvas_shapes_cache: vec![],
       canvas_shapes_obsolete: true,
+
+      guide: 0,
     };
     result.add_polygon();
     result
@@ -288,6 +292,22 @@ impl App {
     self.calc_canvas_shapes();
     painter.extend(self.canvas_shapes_cache.clone());
 
+    const GUIDE_STRINGS: [&'static str; 4] = [
+      "Left click to add at least 3 points",
+      "Right click anywhere to close the ring",
+      "Add another ring inside",
+      "Create a new polygon and see their intersection",
+    ];
+    if self.guide < 4 {
+      painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        GUIDE_STRINGS[self.guide],
+        egui::TextStyle::Heading,
+        egui::Color32::from_rgba_unmultiplied(128, 128, 128, 216),
+      );
+    }
+
     // Pointer interactions
     let pt_pos = match input.pointer.hover_pos().or(input.pointer.interact_pos()) {
       Some(p) => p,
@@ -405,6 +425,7 @@ impl App {
         cyc.push(pt_pos.into());
         self.dragging_vert = DraggingVert::CurCycle(cyc.len() - 1);
         self.drag_offset = (0.0, 0.0);
+        if self.guide == 0 && cyc.len() >= 3 { self.guide = 1; }
       } else {
         self.dragging_vert = DraggingVert::None;
         self.drag_offset = (0.0, 0.0);
@@ -426,6 +447,8 @@ impl App {
           self.polygons[self.sel_polygon.unwrap()].cycles.push(cyc);
           self.dragging_vert = DraggingVert::None;
         }
+        if self.guide == 1 { self.guide = 2; }
+        else if self.guide == 2 { self.guide = 3; }
       } else if self.sel_polygon.is_some() {
         let poly = &mut self.polygons[self.sel_polygon.unwrap()];
         if let Some((i, j)) = find_vertex(&mut poly.cycles) {
@@ -568,7 +591,7 @@ impl epi::App for App {
                       if ui.add_sized(
                         egui::vec2(160.0, ui.style().spacing.interact_size.y),
                         egui::SelectableLabel::new(sel,
-                          format!("#{} ({} vert, {} cyc)",
+                          format!("#{} ({} vert, {} ring)",
                             index + 1,
                             poly.cycles.iter().map(|c| c.len()).sum::<usize>(),
                             poly.cycles.len(),
@@ -623,6 +646,7 @@ impl epi::App for App {
               {
                 self.add_polygon();
                 self.last_added_polygon = true;
+                if self.guide == 3 { self.guide = 4; }
               } else {
                 self.last_added_polygon = false;
               }
