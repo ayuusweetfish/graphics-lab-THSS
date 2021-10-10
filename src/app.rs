@@ -40,8 +40,12 @@ pub struct App {
   last_rect_popup: [egui::Rect; 2],
   last_pt_down: (bool, bool),
   last_pt_held: (bool, bool),
+  last_pt_pos: (f32, f32),
 
   rng: (rand::rngs::ThreadRng, f32),
+
+  canvas_shapes_cache: Vec<egui::Shape>,
+  canvas_shapes_obsolete: bool,
 }
 
 fn rand_khroma<T: rand::Rng>(rng: &mut (T, f32)) -> [f32; 3] {
@@ -72,7 +76,7 @@ fn to_rgba32<const N: usize>(k: [f32; N]) -> egui::Color32 {
   }
 }
 
-fn fill_polygon(painter: &egui::Painter, polygon: &[Vec<(f32, f32)>], kh: egui::Color32) {
+fn fill_polygon(shapes: &mut Vec<egui::Shape>, polygon: &[Vec<(f32, f32)>], kh: egui::Color32) {
   // Split the polygon into disjoint components
   let comps = normalize_polygon(polygon);
   for comp in comps {
@@ -84,7 +88,7 @@ fn fill_polygon(painter: &egui::Painter, polygon: &[Vec<(f32, f32)>], kh: egui::
     for tri in tris.chunks_exact(3) {
       assert!(tri.len() == 3);
       // Fill a triangle
-      painter.add(egui::Shape::convex_polygon(
+      shapes.push(egui::Shape::convex_polygon(
         vec![
           (verts[tri[0] * 2], verts[tri[0] * 2 + 1]).into(),
           (verts[tri[1] * 2], verts[tri[1] * 2 + 1]).into(),
@@ -122,8 +126,12 @@ impl Default for App {
       last_rect_popup: [egui::Rect::NOTHING; 2],
       last_pt_down: (false, false),
       last_pt_held: (false, false),
+      last_pt_pos: (f32::NAN, f32::NAN),
 
       rng,
+
+      canvas_shapes_cache: vec![],
+      canvas_shapes_obsolete: true,
     };
     result.add_polygon();
     result
@@ -147,17 +155,15 @@ impl App {
     self.sel_polygon = Some(self.polygons.len() - 1);
     self.cur_cycle = None;
     self.dragging_vert = DraggingVert::None;
+    self.canvas_shapes_obsolete = true;
   }
 
-  fn process_canvas_interactions(
-    &mut self,
-    painter: egui::Painter,
-    rect: egui::Rect,
-    exclude: &[egui::Rect],
-    _resp: egui::Response,
-    input: &egui::InputState,
-    popup: bool,
-  ) {
+  fn calc_canvas_shapes(&mut self) {
+    if !self.canvas_shapes_obsolete { return; }
+    self.canvas_shapes_obsolete = false;
+    let shapes = &mut self.canvas_shapes_cache;
+    shapes.clear();
+
     let mut self_intxns_any = false;
     // Draw polygons
     for (poly_index, poly) in self.polygons.iter().enumerate() {
@@ -178,13 +184,13 @@ impl App {
       let sel = (self.sel_polygon == Some(poly_index)) && !self.polygons_collapsed;
       // Fill if currently selected
       if !self_intxns_cur && sel {
-        fill_polygon(&painter, &poly.cycles,
+        fill_polygon(shapes, &poly.cycles,
           to_rgba32([poly.khroma[0], poly.khroma[1], poly.khroma[2], 0.6]));
       }
       for (i, cyc) in poly.cycles.iter().enumerate() {
         // Segments
         for j in 0..cyc.len() {
-          painter.line_segment(
+          shapes.push(egui::Shape::line_segment(
             [cyc[j].into(), cyc[(j + 1) % cyc.len()].into()],
             if sel {
               egui::Stroke::new(6.0, kh)
@@ -194,18 +200,18 @@ impl App {
                 r, g, b,
                 128))
             }
-          );
+          ));
         }
         // Vertices
         for j in 0..cyc.len() {
-          painter.circle_filled(cyc[j].into(),
+          shapes.push(egui::Shape::circle_filled(cyc[j].into(),
             if sel { 6.0 } else { 2.0 },
             if sel && self.dragging_vert == DraggingVert::PolygonCycle(i, j) {
               egui::Color32::from_rgb(255, 192, 128)
             } else {
               kh
             }
-          );
+          ));
         }
       }
 
@@ -215,8 +221,8 @@ impl App {
         for (i, with_i) in self_intxns.iter().enumerate() {
           for &(j, p) in with_i {
             if j > i {
-              painter.circle_filled(p.into(), 6.0, kh);
-              painter.circle_stroke(p.into(), 9.0, (2.0, kh));
+              shapes.push(egui::Shape::circle_filled(p.into(), 6.0, kh));
+              shapes.push(egui::Shape::circle_stroke(p.into(), 9.0, (2.0, kh)));
             }
           }
         }
@@ -234,40 +240,53 @@ impl App {
       let intersection_kh = to_rgba32(self.intersection_khroma);
       let intersection_kh_opaque = intersection_kh.to_opaque();
       // Fill
-      fill_polygon(&painter, &intersection, intersection_kh);
+      fill_polygon(shapes, &intersection, intersection_kh);
       // Outline
       for cyc in intersection {
         for j in 0..cyc.len() {
-          painter.line_segment(
+          shapes.push(egui::Shape::line_segment(
             [cyc[j].into(), cyc[(j + 1) % cyc.len()].into()],
             egui::Stroke::new(3.0, intersection_kh_opaque),
-          );
+          ));
         }
         for j in 0..cyc.len() {
-          painter.circle_filled(cyc[j].into(),
+          shapes.push(egui::Shape::circle_filled(cyc[j].into(),
             3.0, intersection_kh_opaque,
-          );
+          ));
         }
       }
     }
     // Current cycle
     if let Some(cyc) = &self.cur_cycle {
       for vert in cyc {
-        painter.circle_filled(
+        shapes.push(egui::Shape::circle_filled(
           vert.into(),
           6.0,
           egui::Color32::from_rgb(128, 192, 64),
-        );
+        ));
       }
       for verts in cyc.windows(2) {
         if let [v1, v2] = verts {
-          painter.line_segment(
+          shapes.push(egui::Shape::line_segment(
             [v1.into(), v2.into()],
             egui::Stroke::new(6.0, egui::Color32::from_rgb(128, 192, 64)),
-          );
+          ));
         }
       }
     }
+  }
+
+  fn process_canvas_interactions(
+    &mut self,
+    painter: egui::Painter,
+    rect: egui::Rect,
+    exclude: &[egui::Rect],
+    _resp: egui::Response,
+    input: &egui::InputState,
+    popup: bool,
+  ) {
+    self.calc_canvas_shapes();
+    painter.extend(self.canvas_shapes_cache.clone());
 
     // Pointer interactions
     let pt_pos = match input.pointer.hover_pos().or(input.pointer.interact_pos()) {
@@ -304,6 +323,10 @@ impl App {
     // Ignore presses if popup is open
     let pt1_press = pt1_press && !popup;
     let pt2_press = pt2_press && !popup;
+
+    // Pointer moved?
+    let pt_moved = dist_sq(pt_pos.into(), self.last_pt_pos) >= 1e-6;
+    self.last_pt_pos = pt_pos.into();
 
     // Process events
     let find_vertex_cycle = |cyc: &Vec<(f32, f32)>| {
@@ -415,7 +438,10 @@ impl App {
       }
     }
 
-    let (_, _, _) = (pt2_rel, pt1_held, pt2_held);
+    if ((pt1_held || pt2_held) && pt_moved) ||
+       (pt1_press || pt2_press || pt1_rel || pt2_rel) {
+      self.canvas_shapes_obsolete = true;
+    }
   }
 }
 
@@ -530,6 +556,7 @@ impl epi::App for App {
                       for value in self.polygons_visible.iter_mut() {
                         *value = !any_visible;
                       }
+                      self.canvas_shapes_obsolete = true;
                     }
                   });
                   for (index, poly) in self.polygons.iter_mut().enumerate() {
@@ -550,6 +577,7 @@ impl epi::App for App {
                         self.sel_polygon = if sel { None } else { Some(index) };
                         self.cur_cycle = None;
                         self.dragging_vert = DraggingVert::None;
+                        self.canvas_shapes_obsolete = true;
                       }
                       // Recalculate selection state to avoid UI jumping
                       let sel = match self.sel_polygon {
@@ -560,11 +588,13 @@ impl epi::App for App {
                       if ui.selectable_label(self.polygons_visible[index], "\u{25cb}")
                            .on_hover_text("Visibility").clicked() {
                         self.polygons_visible[index] = !self.polygons_visible[index];
+                        self.canvas_shapes_obsolete = true;
                       }
                       if sel {
                         if ui.selectable_label(false, "×")
                              .on_hover_text("Remove").clicked() {
                           polygon_remove = Some(index);
+                          self.canvas_shapes_obsolete = true;
                         }
                       }
                     });
