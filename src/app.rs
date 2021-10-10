@@ -171,6 +171,10 @@ impl App {
     let mut self_intxns_any = false;
     // Draw polygons
     for (poly_index, poly) in self.polygons.iter().enumerate() {
+      if !self.polygons_visible[poly_index] && self.sel_polygon != Some(poly_index) {
+        continue;
+      }
+
       // Check for self-intersections
       // Find out all segments
       let mut segs = vec![];
@@ -295,8 +299,8 @@ impl App {
     const GUIDE_STRINGS: [&'static str; 4] = [
       "Left click to add at least 3 points",
       "Right click anywhere to close the ring",
-      "Add another ring inside",
-      "Create a new polygon and see their intersection",
+      "Similarly add another ring for the same polygon",
+      "In the top-left panel, create a new polygon and see their intersection",
     ];
     if self.guide < 4 {
       painter.text(
@@ -446,9 +450,13 @@ impl App {
         if cyc.len() >= 3 {
           self.polygons[self.sel_polygon.unwrap()].cycles.push(cyc);
           self.dragging_vert = DraggingVert::None;
+          if self.guide == 1 {
+            self.guide = 2;
+          } else if self.guide == 2 &&
+              self.polygons[self.sel_polygon.unwrap()].cycles.len() >= 2 {
+            self.guide = 3;
+          }
         }
-        if self.guide == 1 { self.guide = 2; }
-        else if self.guide == 2 { self.guide = 3; }
       } else if self.sel_polygon.is_some() {
         let poly = &mut self.polygons[self.sel_polygon.unwrap()];
         if let Some((i, j)) = find_vertex(&mut poly.cycles) {
@@ -651,9 +659,15 @@ impl epi::App for App {
                 self.last_added_polygon = false;
               }
             }).body_response.is_none() {
-              self.polygons_collapsed = true;
+              if !self.polygons_collapsed {
+                self.polygons_collapsed = true;
+                self.canvas_shapes_obsolete = true;
+              }
             } else {
-              self.polygons_collapsed = false;
+              if self.polygons_collapsed {
+                self.polygons_collapsed = false;
+                self.canvas_shapes_obsolete = true;
+              }
             }
           });
         self.last_rect_popup[0] = ui.min_rect();
