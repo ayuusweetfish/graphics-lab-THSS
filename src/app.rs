@@ -566,7 +566,7 @@ impl epi::App for App {
             if egui::CollapsingHeader::new("Polygons").default_open(true).show(ui, |ui| {
               let mut polygon_remove = None;
               ui.allocate_ui(egui::vec2(180.0, 240.0), |ui| {
-                egui::ScrollArea::auto_sized().show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
                   ui.horizontal(|ui| {
                     ui.add_sized(
                       egui::vec2(160.0, ui.style().spacing.interact_size.y),
