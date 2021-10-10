@@ -488,7 +488,7 @@ impl epi::App for App {
     let mut fonts = egui::FontDefinitions::default();
     fonts.font_data.insert(
       "qisixihei".to_owned(),
-      std::borrow::Cow::Borrowed(include_bytes!("../fonts/1570788235.ttf")));
+      std::borrow::Cow::Borrowed(include_bytes!("../fonts/1570788235-subset.ttf")));
     fonts.fonts_for_family.get_mut(&egui::FontFamily::Proportional).unwrap()
       .insert(0, "qisixihei".to_owned());
     fonts.fonts_for_family.get_mut(&egui::FontFamily::Monospace).unwrap()
@@ -582,7 +582,7 @@ impl epi::App for App {
                     );
                     ui.color_edit_button_rgba_unmultiplied(&mut self.intersection_khroma);
                     let any_visible = self.polygons_visible.iter().any(|x| *x);
-                    if ui.selectable_label(any_visible, "\u{25cb}")
+                    if ui.selectable_label(any_visible, "○")
                          .on_hover_text("Visibility").clicked() {
                       for value in self.polygons_visible.iter_mut() {
                         *value = !any_visible;
@@ -616,7 +616,7 @@ impl epi::App for App {
                         _ => false,
                       };
                       ui.color_edit_button_rgb(&mut poly.khroma);
-                      if ui.selectable_label(self.polygons_visible[index], "\u{25cb}")
+                      if ui.selectable_label(self.polygons_visible[index], "○")
                            .on_hover_text("Visibility").clicked() {
                         self.polygons_visible[index] = !self.polygons_visible[index];
                         self.canvas_shapes_obsolete = true;
