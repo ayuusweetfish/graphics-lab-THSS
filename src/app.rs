@@ -240,7 +240,7 @@ impl App {
     if !self_intxns_any {
       let intersection_polygons: Vec<&Vec<Vec<(f32, f32)>>> =
         self.polygons.iter().zip(self.polygons_visible.iter())
-          .filter(|(_, &visible)| visible)
+          .filter(|(polygon, &visible)| visible && !polygon.cycles.is_empty())
           .map(|(polygon, _)| &polygon.cycles)
           .collect();
       // println!("{:?}", intersection_polygons);
