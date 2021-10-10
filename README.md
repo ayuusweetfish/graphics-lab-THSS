@@ -2,6 +2,8 @@
 
 Polygon intersection visualization in Rust.
 
+Web demo: [**en**](https://kawa-yoiko.github.io/polygon-intersection/en/), [**zh**](https://kawa-yoiko.github.io/polygon-intersection/zh/)
+
 ![Screenshot 1](images/intsc_1.png)
 
 ![Screenshot 2](images/intsc_2.png)
