@@ -1,3 +1,3 @@
 [submodule "egui"]
-	path = egui
+	path = polygon_intersect/egui
 	url = https://github.com/emilk/egui.git
