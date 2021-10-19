@@ -132,7 +132,7 @@ void main() {
   let mut frame_num = 0;
 
   let mut cam_pos = glm::vec3(9.02922, -8.50027, 7.65063);
-  let mut cam_right = glm::normalize(glm::vec3(8.72799, -8.21633, 8.48306) - cam_pos);
+  let mut cam_up = glm::normalize(glm::vec3(8.72799, -8.21633, 8.48306) - cam_pos);
   let mut cam_ori = glm::normalize(glm::vec3(4.01535, -3.77411, 4.22417) - cam_pos);
 
   let p_mat = glm::ext::perspective(
@@ -195,14 +195,20 @@ void main() {
       cam_pos = cam_pos - cam_ori * move_dist;
     }
     if window.get_key(glfw::Key::A) == glfw::Action::Press {
-      cam_pos = cam_pos - glm::cross(cam_ori, cam_right) * move_dist;
+      cam_pos = cam_pos - glm::cross(cam_ori, cam_up) * move_dist;
     }
     if window.get_key(glfw::Key::D) == glfw::Action::Press {
-      cam_pos = cam_pos + glm::cross(cam_ori, cam_right) * move_dist;
+      cam_pos = cam_pos + glm::cross(cam_ori, cam_up) * move_dist;
+    }
+    if window.get_key(glfw::Key::Tab) == glfw::Action::Press {
+      cam_pos = cam_pos + cam_up * move_dist;
+    }
+    if window.get_key(glfw::Key::LeftShift) == glfw::Action::Press {
+      cam_pos = cam_pos - cam_up * move_dist;
     }
 
     // Camera matrix
-    let v = glm::ext::look_at(cam_pos, cam_pos + cam_ori, cam_right);
+    let v = glm::ext::look_at(cam_pos, cam_pos + cam_ori, cam_up);
     let vp = p_mat * v;
     gl::UniformMatrix4fv(uni_vp, 1, gl::FALSE, vp.as_array().as_ptr().cast());
     gl::Uniform3f(uni_cam_pos, cam_pos.x, cam_pos.y, cam_pos.z);
