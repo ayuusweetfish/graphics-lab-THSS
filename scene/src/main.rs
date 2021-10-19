@@ -40,28 +40,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   gl::GenBuffers(1, &mut vbo);
   gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
 
-  // Load frame
-  let frame = scene_loader::load("1a/1a_000001.obj")?;
-  gl::VertexAttribPointer(
-    0,
-    3, gl::FLOAT, gl::FALSE,
-    size_of_val(&frame.vertices[0]) as gl::int,
-    0 as *const _,
-  );
+  // Load frames
+  let mut frames = vec![];
+  for i in 1..=48 {
+    frames.push(scene_loader::load(format!("1a/1a_{:0>6}.obj", i))?);
+  }
+  // let max_num_vertices =
+  //   frames.iter().map(|frame| frame.vertices.len()).max().unwrap_or(0);
+
   gl::EnableVertexAttribArray(0);
-  gl::VertexAttribPointer(
-    1,
-    3, gl::FLOAT, gl::FALSE,
-    size_of_val(&frame.vertices[0]) as gl::int,
-    (3 * size_of::<f32>()) as *const _,
-  );
   gl::EnableVertexAttribArray(1);
-  gl::BufferData(
-    gl::ARRAY_BUFFER,
-    size_of_val(&*frame.vertices) as isize,
-    frame.vertices.as_ptr().cast(),
-    gl::STREAM_DRAW,
-  );
 
   let vs = gl::CreateShader(gl::VERTEX_SHADER);
   const VERTEX_SHADER: &str = r"
@@ -126,46 +114,33 @@ void main() {
 
   gl::UseProgram(prog);
 
-  check_gl_errors();
-
-  // Camera
-  let cam_pos = (9.02922, -8.50027, 7.65063);
-  let cam_right = (
-    8.72799 - cam_pos.0,
-    -8.21633 - cam_pos.1,
-    8.48306 - cam_pos.2,
-  );
-  let cam_look = (4.01535, -3.77411, 4.22417);
-
+  // Uniform locations
   let uni_vp = gl::GetUniformLocation(prog, "VP\0".as_ptr().cast());
-  let v = glm::ext::look_at(
-    glm::vec3(cam_pos.0, cam_pos.1, cam_pos.2),
-    glm::vec3(cam_look.0, cam_look.1, cam_look.2),
-    glm::vec3(cam_right.0, cam_right.1, cam_right.2),
-  );
-  let p = glm::ext::perspective(
-    0.5236,
-    16.0 / 9.0,
-    0.1,
-    100.0,
-  );
-  let vp = p * v;
-  gl::UniformMatrix4fv(uni_vp, 1, gl::FALSE, vp.as_array().as_ptr().cast());
-
-  // Light
-  let light_pos = (6.0, -3.0, 6.0);
-  let light_pos = (3.7, -6.1, 5.0);
   let uni_light_pos = gl::GetUniformLocation(prog, "light_pos\0".as_ptr().cast());
-  gl::Uniform3f(uni_light_pos, light_pos.0, light_pos.1, light_pos.2);
   let uni_cam_pos = gl::GetUniformLocation(prog, "cam_pos\0".as_ptr().cast());
-  gl::Uniform3f(uni_cam_pos, cam_pos.0, cam_pos.1, cam_pos.2);
-
-  check_gl_errors();
 
   gl::Enable(gl::DEPTH_TEST);
   gl::DepthFunc(gl::LESS);
 
   gl::Enable(gl::CULL_FACE);
+
+  check_gl_errors();
+
+  let frame_len = 1.0 / 48.0;
+  let mut last_time = glfw.get_time() as f32;
+  let mut accum_time = 0.0;
+  let mut frame_num = 0;
+
+  let mut cam_pos = glm::vec3(9.02922, -8.50027, 7.65063);
+  let mut cam_right = glm::normalize(glm::vec3(8.72799, -8.21633, 8.48306) - cam_pos);
+  let mut cam_ori = glm::normalize(glm::vec3(4.01535, -3.77411, 4.22417) - cam_pos);
+
+  let p_mat = glm::ext::perspective(
+    0.5236,
+    16.0 / 9.0,
+    0.1,
+    100.0,
+  );
 
   while !window.should_close() {
     window.swap_buffers();
@@ -180,6 +155,63 @@ void main() {
       }
     }
 
+    // Update with time
+    let cur_time = glfw.get_time() as f32;
+    let delta_time = cur_time - last_time;
+    accum_time += delta_time;
+    last_time = cur_time;
+    while accum_time >= frame_len {
+      accum_time -= frame_len;
+      frame_num = (frame_num + 1) % frames.len();
+    }
+
+    // Frame data
+    let frame = &frames[frame_num];
+    gl::VertexAttribPointer(
+      0,
+      3, gl::FLOAT, gl::FALSE,
+      size_of_val(&frame.vertices[0]) as gl::int,
+      0 as *const _,
+    );
+    gl::VertexAttribPointer(
+      1,
+      3, gl::FLOAT, gl::FALSE,
+      size_of_val(&frame.vertices[0]) as gl::int,
+      (3 * size_of::<f32>()) as *const _,
+    );
+    gl::BufferData(
+      gl::ARRAY_BUFFER,
+      size_of_val(&*frame.vertices) as isize,
+      frame.vertices.as_ptr().cast(),
+      gl::STREAM_DRAW,
+    );
+
+    // Camera movement
+    let move_dist = delta_time * 10.0;
+    if window.get_key(glfw::Key::W) == glfw::Action::Press {
+      cam_pos = cam_pos + cam_ori * move_dist;
+    }
+    if window.get_key(glfw::Key::S) == glfw::Action::Press {
+      cam_pos = cam_pos - cam_ori * move_dist;
+    }
+    if window.get_key(glfw::Key::A) == glfw::Action::Press {
+      cam_pos = cam_pos - glm::cross(cam_ori, cam_right) * move_dist;
+    }
+    if window.get_key(glfw::Key::D) == glfw::Action::Press {
+      cam_pos = cam_pos + glm::cross(cam_ori, cam_right) * move_dist;
+    }
+
+    // Camera matrix
+    let v = glm::ext::look_at(cam_pos, cam_pos + cam_ori, cam_right);
+    let vp = p_mat * v;
+    gl::UniformMatrix4fv(uni_vp, 1, gl::FALSE, vp.as_array().as_ptr().cast());
+    gl::Uniform3f(uni_cam_pos, cam_pos.x, cam_pos.y, cam_pos.z);
+
+    // Light
+    let light_pos = glm::vec3(6.0, -3.0, 6.0);
+    gl::Uniform3f(uni_light_pos, light_pos.x, light_pos.y, light_pos.z);
+
+    // Draw
     gl::ClearColor(1.0, 0.99, 0.99, 1.0);
     gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 

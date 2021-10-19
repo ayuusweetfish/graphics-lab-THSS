@@ -13,7 +13,6 @@ pub fn load<P: AsRef<std::path::Path>>(p: P)
   let mut vertices = vec![];
 
   for object in objects {
-    println!("{}", object.name);
     for geom in object.geometry {
       for shape in geom.shapes {
         if let obj::Primitive::Triangle(
