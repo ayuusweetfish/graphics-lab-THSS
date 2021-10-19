@@ -3,6 +3,7 @@ mod scene_loader;
 
 use glfw::Context;
 use wavefront_obj::obj;
+use image::GenericImageView;
 
 use core::mem::{size_of, size_of_val};
 
@@ -15,6 +16,36 @@ fn check_gl_errors() {
 
 const W: u32 = 960;
 const H: u32 = 540;
+
+fn shader(ty: gl::types::GLenum, src: &str) -> gl::types::GLuint {
+  let id = gl::CreateShader(ty);
+  gl::ShaderSource(
+    id, 1,
+    &(src.as_bytes().as_ptr().cast()),
+    &(src.len() as gl::int),
+  );
+  gl::CompileShader(id);
+  let mut log = [0u8; 1024];
+  let mut len = 0;
+  gl::GetShaderInfoLog(id, log.len() as gl::int,
+    &mut len, log.as_mut_slice().as_mut_ptr().cast());
+  if len != 0 {
+    println!("{}", std::str::from_utf8(&log[..len as usize]).unwrap());
+  }
+  id
+}
+
+fn program(vs: &str, fs: &str) -> gl::types::GLuint {
+  let vs = shader(gl::VERTEX_SHADER, vs);
+  let fs = shader(gl::FRAGMENT_SHADER, fs);
+  let prog = gl::CreateProgram();
+  gl::AttachShader(prog, vs);
+  gl::AttachShader(prog, fs);
+  gl::LinkProgram(prog);
+  gl::DeleteShader(vs);
+  gl::DeleteShader(fs);
+  prog
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
   let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
@@ -36,26 +67,118 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   window.set_key_polling(true);
   window.make_current();
 
-  let mut vao = 0;
-  gl::GenVertexArrays(1, &mut vao);
-  gl::BindVertexArray(vao);
-  let mut vbo = 0;
-  gl::GenBuffers(1, &mut vbo);
-  gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+  // Sky box
+  let mut skybox_tex = 0;
+  gl::GenTextures(1, &mut skybox_tex);
+  gl::ActiveTexture(gl::TEXTURE0);
+  gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_tex);
+  for (i, file) in [
+    "skybox/right.jpg",
+    "skybox/left.jpg",
+    "skybox/top.jpg",
+    "skybox/bottom.jpg",
+    "skybox/front.jpg",
+    "skybox/back.jpg",
+  ].into_iter().enumerate() {
+    let img = image::io::Reader::open(file)?.decode()?;
+    let (w, h) = img.dimensions();
+    let buf = img.into_rgb8().into_raw();
+    gl::TexImage2D(
+      gl::TEXTURE_CUBE_MAP_POSITIVE_X + i as u32,
+      0,
+      gl::RGB as gl::int,
+      w as gl::int, h as gl::int, 0,
+      gl::RGB,
+      gl::UNSIGNED_BYTE,
+      buf.as_ptr().cast()
+    );
+  }
+  gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MIN_FILTER, gl::LINEAR as gl::int);
+  gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::int);
+  gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as gl::int);
+  gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as gl::int);
+  gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_R, gl::CLAMP_TO_EDGE as gl::int);
+
+  let skybox_prog = program(r"
+#version 330 core
+uniform mat4 VP;
+layout (location = 0) in vec3 v_pos;
+out vec3 f_tex_coord;
+
+void main() {
+  f_tex_coord = v_pos;
+  gl_Position = (VP * vec4(v_pos, 1.0)).xyww;
+}
+", r"
+#version 330 core
+uniform samplerCube skybox;
+in vec3 f_tex_coord;
+out vec4 out_colour;
+
+void main() {
+  out_colour = texture(skybox, f_tex_coord);
+}
+");
+
+  // Uniform locations
+  let skybox_uni_vp = gl::GetUniformLocation(skybox_prog, "VP\0".as_ptr().cast());
+  let skybox_uni_sampler = gl::GetUniformLocation(skybox_prog, "skybox\0".as_ptr().cast());
+  gl::UseProgram(skybox_prog);
+  gl::Uniform1i(skybox_uni_sampler, 0);
+
+  let mut skybox_vao = 0;
+  gl::GenVertexArrays(1, &mut skybox_vao);
+  gl::BindVertexArray(skybox_vao);
+  let mut skybox_vbo = 0;
+  gl::GenBuffers(1, &mut skybox_vbo);
+  gl::BindBuffer(gl::ARRAY_BUFFER, skybox_vbo);
+
+  gl::EnableVertexAttribArray(0);
+  gl::VertexAttribPointer(
+    0,
+    3, gl::FLOAT, gl::FALSE,
+    (3 * size_of::<f32>()) as gl::int,
+    0 as *const _,
+  );
+
+  let skybox_verts: [f32; 108] = include!("skybox_verts.txt");
+  gl::BufferData(
+    gl::ARRAY_BUFFER,
+    size_of_val(&skybox_verts) as isize,
+    skybox_verts.as_ptr().cast(),
+    gl::STREAM_DRAW,
+  );
+
+  // Scene objects
+  let mut scene_vao = 0;
+  gl::GenVertexArrays(1, &mut scene_vao);
+  gl::BindVertexArray(scene_vao);
+  let mut scene_vbo = 0;
+  gl::GenBuffers(1, &mut scene_vbo);
+  gl::BindBuffer(gl::ARRAY_BUFFER, scene_vbo);
 
   // Load frames
   let mut frames = vec![];
   for i in 1..=1 {
     frames.push(scene_loader::load(format!("1a/1a_{:0>6}.obj", i))?);
   }
-  // let max_num_vertices =
-  //   frames.iter().map(|frame| frame.vertices.len()).max().unwrap_or(0);
 
   gl::EnableVertexAttribArray(0);
+  gl::VertexAttribPointer(
+    0,
+    3, gl::FLOAT, gl::FALSE,
+    size_of_val(&frames[0].vertices[0]) as gl::int,
+    0 as *const _,
+  );
   gl::EnableVertexAttribArray(1);
+  gl::VertexAttribPointer(
+    1,
+    3, gl::FLOAT, gl::FALSE,
+    size_of_val(&frames[0].vertices[0]) as gl::int,
+    (3 * size_of::<f32>()) as *const _,
+  );
 
-  let vs = gl::CreateShader(gl::VERTEX_SHADER);
-  const VERTEX_SHADER: &str = r"
+  let scene_prog = program(r"
 #version 330 core
 uniform mat4 VP;
 layout (location = 0) in vec3 v_pos;
@@ -68,16 +191,7 @@ void main() {
   f_pos = v_pos;
   f_normal = v_normal;
 }
-";
-  gl::ShaderSource(
-    vs, 1,
-    &(VERTEX_SHADER.as_bytes().as_ptr().cast()),
-    &(VERTEX_SHADER.len() as gl::int),
-  );
-  gl::CompileShader(vs);
-
-  let fs = gl::CreateShader(gl::FRAGMENT_SHADER);
-  const FRAGMENT_SHADER: &str = r"
+", r"
 #version 330 core
 uniform vec3 light_pos;
 uniform vec3 cam_pos;
@@ -100,32 +214,12 @@ void main() {
 
   out_colour = vec4(ambient_colour + (diff + spec) * light_colour, 1.0);
 }
-";
-  gl::ShaderSource(
-    fs, 1,
-    &(FRAGMENT_SHADER.as_bytes().as_ptr().cast()),
-    &(FRAGMENT_SHADER.len() as gl::int),
-  );
-  gl::CompileShader(fs);
-
-  let prog = gl::CreateProgram();
-  gl::AttachShader(prog, vs);
-  gl::AttachShader(prog, fs);
-  gl::LinkProgram(prog);
-  gl::DeleteShader(vs);
-  gl::DeleteShader(fs);
-
-  gl::UseProgram(prog);
+");
 
   // Uniform locations
-  let uni_vp = gl::GetUniformLocation(prog, "VP\0".as_ptr().cast());
-  let uni_light_pos = gl::GetUniformLocation(prog, "light_pos\0".as_ptr().cast());
-  let uni_cam_pos = gl::GetUniformLocation(prog, "cam_pos\0".as_ptr().cast());
-
-  gl::Enable(gl::DEPTH_TEST);
-  gl::DepthFunc(gl::LESS);
-
-  gl::Enable(gl::CULL_FACE);
+  let scene_uni_vp = gl::GetUniformLocation(scene_prog, "VP\0".as_ptr().cast());
+  let scene_uni_light_pos = gl::GetUniformLocation(scene_prog, "light_pos\0".as_ptr().cast());
+  let scene_uni_cam_pos = gl::GetUniformLocation(scene_prog, "cam_pos\0".as_ptr().cast());
 
   check_gl_errors();
 
@@ -136,6 +230,7 @@ void main() {
 
   let mut cam_pos = glm::vec3(9.02922, -8.50027, 7.65063);
   let mut cam_up = glm::normalize(glm::vec3(8.72799, -8.21633, 8.48306) - cam_pos);
+  let cam_up = glm::vec3(0.0, 1.0, 0.0);
   let mut cam_ori = glm::normalize(glm::vec3(4.01535, -3.77411, 4.22417) - cam_pos);
 
   let p_mat = glm::ext::perspective(
@@ -174,18 +269,6 @@ void main() {
 
     // Frame data
     let frame = &frames[frame_num];
-    gl::VertexAttribPointer(
-      0,
-      3, gl::FLOAT, gl::FALSE,
-      size_of_val(&frame.vertices[0]) as gl::int,
-      0 as *const _,
-    );
-    gl::VertexAttribPointer(
-      1,
-      3, gl::FLOAT, gl::FALSE,
-      size_of_val(&frame.vertices[0]) as gl::int,
-      (3 * size_of::<f32>()) as *const _,
-    );
     gl::BufferData(
       gl::ARRAY_BUFFER,
       size_of_val(&*frame.vertices) as isize,
@@ -238,18 +321,49 @@ void main() {
     // Camera matrix
     let v = glm::ext::look_at(cam_pos, cam_pos + cam_ori, cam_up);
     let vp = p_mat * v;
-    gl::UniformMatrix4fv(uni_vp, 1, gl::FALSE, vp.as_array().as_ptr().cast());
-    gl::Uniform3f(uni_cam_pos, cam_pos.x, cam_pos.y, cam_pos.z);
+    let mut vnopan = v.clone();
+    vnopan.c0.w = 0.0;
+    vnopan.c1.w = 0.0;
+    vnopan.c2.w = 0.0;
+    vnopan.c3 = glm::vec4(0.0, 0.0, 0.0, 1.0);
+    let vnopan_p = p_mat * vnopan;
 
     // Light
     let light_pos = glm::vec3(6.0, -3.0, 6.0);
-    gl::Uniform3f(uni_light_pos, light_pos.x, light_pos.y, light_pos.z);
 
     // Draw
     gl::ClearColor(1.0, 0.99, 0.99, 1.0);
     gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
+    // Skybox
+    gl::UseProgram(skybox_prog);
+    // Uniforms and textures
+    gl::UniformMatrix4fv(skybox_uni_vp, 1, gl::FALSE, vnopan_p.as_array().as_ptr().cast());
+    gl::ActiveTexture(gl::TEXTURE0);
+    gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_tex);
+    // Draw
+    gl::BindVertexArray(skybox_vao);
+    gl::BindBuffer(gl::ARRAY_BUFFER, skybox_vbo);
+    gl::DepthMask(gl::FALSE);
+    gl::Disable(gl::CULL_FACE);
+    gl::Disable(gl::DEPTH_TEST);
+    gl::DrawArrays(gl::TRIANGLES, 0, 36);
+    gl::DepthMask(gl::TRUE);
+
+    // Scene
+    gl::UseProgram(scene_prog);
+    // Uniforms
+    gl::UniformMatrix4fv(scene_uni_vp, 1, gl::FALSE, vp.as_array().as_ptr().cast());
+    gl::Uniform3f(scene_uni_cam_pos, cam_pos.x, cam_pos.y, cam_pos.z);
+    gl::Uniform3f(scene_uni_light_pos, light_pos.x, light_pos.y, light_pos.z);
+    // Draw
+    gl::BindVertexArray(scene_vao);
+    gl::BindBuffer(gl::ARRAY_BUFFER, scene_vbo);
+    gl::Enable(gl::CULL_FACE);
+    gl::Enable(gl::DEPTH_TEST);
+    gl::DepthFunc(gl::LESS);
     gl::DrawArrays(gl::TRIANGLES, 0, frame.vertices.len() as gl::int);
+
     check_gl_errors();
   }
 

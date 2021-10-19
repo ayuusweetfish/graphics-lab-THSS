@@ -8,6 +8,7 @@ build = "build.rs"
 glfw = { git = "https://github.com/bjz/glfw-rs.git" }
 wavefront_obj = "10.0.0"
 glm = "0.2.3"
+image = "0.23.14"
 
 [build-dependencies]
 gl_generator = "0.5.0"
