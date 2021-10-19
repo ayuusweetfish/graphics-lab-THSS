@@ -49,6 +49,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     0 as *const _,
   );
   gl::EnableVertexAttribArray(0);
+  gl::VertexAttribPointer(
+    1,
+    3, gl::FLOAT, gl::FALSE,
+    size_of_val(&frame.vertices[0]) as gl::int,
+    (3 * size_of::<f32>()) as *const _,
+  );
+  gl::EnableVertexAttribArray(1);
   gl::BufferData(
     gl::ARRAY_BUFFER,
     size_of_val(&*frame.vertices) as isize,
@@ -59,13 +66,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   let vs = gl::CreateShader(gl::VERTEX_SHADER);
   const VERTEX_SHADER: &str = r"
 #version 330 core
-layout (location = 0) in vec3 pos;
-// layout (location = 1) in vec3 v_colour_i;
-// out vec3 v_colour;
 uniform mat4 VP;
+layout (location = 0) in vec3 v_pos;
+layout (location = 1) in vec3 v_normal;
+out vec3 f_pos;
+out vec3 f_normal;
+
 void main() {
-  gl_Position = VP * vec4(pos.x, pos.y, pos.z, 1.0);
-  // v_colour = v_colour_i;
+  gl_Position = VP * vec4(v_pos, 1.0);
+  f_pos = v_pos;
+  f_normal = v_normal;
 }
 ";
   gl::ShaderSource(
@@ -78,12 +88,26 @@ void main() {
   let fs = gl::CreateShader(gl::FRAGMENT_SHADER);
   const FRAGMENT_SHADER: &str = r"
 #version 330 core
-// in vec3 v_colour;
-out vec4 colour;
+uniform vec3 light_pos;
+uniform vec3 cam_pos;
+in vec3 f_pos;
+in vec3 f_normal;
+out vec4 out_colour;
 
 void main() {
-  // colour = vec4(v_colour, 1.0);
-  colour = vec4(0.9, 0.8, 0.7, 1.0);
+  vec3 ambient_colour = vec3(0.1, 0.05, 0.0);
+  vec3 light_colour = vec3(0.9, 0.8, 0.7);
+
+  vec3 n = normalize(f_normal);
+
+  vec3 light_dir = normalize(light_pos - f_pos);
+  float diff = 0.7 * max(dot(n, light_dir), 0);
+
+  vec3 view_dir = normalize(cam_pos - f_pos);
+  vec3 refl_dir = reflect(-light_dir, n);
+  float spec = 0.3 * pow(max(dot(view_dir, refl_dir), 0.0), 16);
+
+  out_colour = vec4(ambient_colour + (diff + spec) * light_colour, 1.0);
 }
 ";
   gl::ShaderSource(
@@ -113,7 +137,7 @@ void main() {
   );
   let cam_look = (4.01535, -3.77411, 4.22417);
 
-  let uni_vp = gl::GetUniformLocation(prog, "VP".as_ptr().cast());
+  let uni_vp = gl::GetUniformLocation(prog, "VP\0".as_ptr().cast());
   let v = glm::ext::look_at(
     glm::vec3(cam_pos.0, cam_pos.1, cam_pos.2),
     glm::vec3(cam_look.0, cam_look.1, cam_look.2),
@@ -127,6 +151,16 @@ void main() {
   );
   let vp = p * v;
   gl::UniformMatrix4fv(uni_vp, 1, gl::FALSE, vp.as_array().as_ptr().cast());
+
+  // Light
+  let light_pos = (6.0, -3.0, 6.0);
+  let light_pos = (3.7, -6.1, 5.0);
+  let uni_light_pos = gl::GetUniformLocation(prog, "light_pos\0".as_ptr().cast());
+  gl::Uniform3f(uni_light_pos, light_pos.0, light_pos.1, light_pos.2);
+  let uni_cam_pos = gl::GetUniformLocation(prog, "cam_pos\0".as_ptr().cast());
+  gl::Uniform3f(uni_cam_pos, cam_pos.0, cam_pos.1, cam_pos.2);
+
+  check_gl_errors();
 
   gl::Enable(gl::CULL_FACE);
 

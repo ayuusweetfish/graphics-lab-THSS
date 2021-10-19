@@ -2,7 +2,7 @@ use crate::gl;
 use wavefront_obj::obj;
 
 pub struct Frame {
-  pub vertices: Vec<[f32; 3]>,
+  pub vertices: Vec<[f32; 6]>,
 }
 
 pub fn load<P: AsRef<std::path::Path>>(p: P)
@@ -17,13 +17,21 @@ pub fn load<P: AsRef<std::path::Path>>(p: P)
     for geom in object.geometry {
       for shape in geom.shapes {
         if let obj::Primitive::Triangle(
-          (vi0, _, _),
-          (vi1, _, _),
-          (vi2, _, _),
+          (vi0, _, Some(ni0)),
+          (vi1, _, Some(ni1)),
+          (vi2, _, Some(ni2)),
         ) = shape.primitive {
-          for vi in [vi0, vi1, vi2] {
+          for (vi, ni) in [
+            (vi0, ni0),
+            (vi1, ni1),
+            (vi2, ni2),
+          ] {
             let v = object.vertices[vi];
-            vertices.push([v.x as f32, v.y as f32, v.z as f32]);
+            let n = object.normals[ni];
+            vertices.push([
+              v.x as f32, v.y as f32, v.z as f32,
+              n.x as f32, n.y as f32, n.z as f32,
+            ]);
           }
         }
       }
