@@ -13,6 +13,9 @@ fn check_gl_errors() {
   }
 }
 
+const W: u32 = 960;
+const H: u32 = 540;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
   let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
 
@@ -21,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   glfw.window_hint(glfw::WindowHint::OpenGlProfile(glfw::OpenGlProfileHint::Core));
 
   let (mut window, events) = glfw.create_window(
-    960, 540,
+    W, H,
     "Window",
     glfw::WindowMode::Windowed,
   )
@@ -42,7 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
   // Load frames
   let mut frames = vec![];
-  for i in 1..=48 {
+  for i in 1..=1 {
     frames.push(scene_loader::load(format!("1a/1a_{:0>6}.obj", i))?);
   }
   // let max_num_vertices =
@@ -142,6 +145,10 @@ void main() {
     100.0,
   );
 
+  // Hide cursor
+  window.set_cursor_mode(glfw::CursorMode::Disabled);
+  let mut last_cursor = window.get_cursor_pos();
+
   while !window.should_close() {
     window.swap_buffers();
 
@@ -186,7 +193,7 @@ void main() {
       gl::STREAM_DRAW,
     );
 
-    // Camera movement
+    // Camera panning
     let move_dist = delta_time * 10.0;
     if window.get_key(glfw::Key::W) == glfw::Action::Press {
       cam_pos = cam_pos + cam_ori * move_dist;
@@ -205,6 +212,27 @@ void main() {
     }
     if window.get_key(glfw::Key::LeftShift) == glfw::Action::Press {
       cam_pos = cam_pos - cam_up * move_dist;
+    }
+
+    // Camera rotation
+    let (x, y) = window.get_cursor_pos();
+    let (dx, dy) = (last_cursor.0 - x, last_cursor.1 - y);
+    last_cursor = (x, y);
+    if dx.abs() >= 0.25 || dy.abs() >= 0.25 {
+      let rotate_speed = 1.0 / 480.0;
+      let cam_right = glm::cross(cam_ori, cam_up);
+      // X
+      let angle = dx as f32 * rotate_speed;
+      let (cos_a, sin_a) = (angle.cos(), angle.sin());
+      // cross(up, ori) = -right
+      cam_ori = cam_ori * cos_a - cam_right * sin_a;
+      // Y
+      let angle = dy as f32 * rotate_speed;
+      let (cos_a, sin_a) = (angle.cos(), angle.sin());
+      // cross(right, ori) = up
+      cam_ori = cam_ori * cos_a + cam_up * sin_a;
+      // In case drift happens
+      cam_ori = glm::normalize(cam_ori);
     }
 
     // Camera matrix
