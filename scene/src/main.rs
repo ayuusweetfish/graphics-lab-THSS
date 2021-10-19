@@ -1,6 +1,8 @@
 mod gl;
+mod scene_loader;
 
 use glfw::Context;
+use wavefront_obj::obj;
 
 use core::mem::{size_of, size_of_val};
 
@@ -11,7 +13,7 @@ fn check_gl_errors() {
   }
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
   let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
 
   glfw.window_hint(glfw::WindowHint::ContextVersion(3, 3));
@@ -38,35 +40,31 @@ fn main() {
   gl::GenBuffers(1, &mut vbo);
   gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
 
-  let mut vertices: [[f32; 6]; 3] = [
-    [-0.4, -0.4, 0.0, 1.0, 0.6, 0.0],
-    [ 0.4, -0.4, 0.0, 0.8, 0.9, 0.1],
-    [ 0.0,  0.5, 0.0, 0.7, 0.4, 1.0],
-  ];
+  // Load frame
+  let frame = scene_loader::load("1a/1a_000001.obj")?;
   gl::VertexAttribPointer(
     0,
-    vertices.len() as gl::int, gl::FLOAT, gl::FALSE,
-    size_of_val(&vertices[0]) as gl::int,
+    3, gl::FLOAT, gl::FALSE,
+    size_of_val(&frame.vertices[0]) as gl::int,
     0 as *const _,
   );
-  gl::VertexAttribPointer(
-    1,
-    vertices.len() as gl::int, gl::FLOAT, gl::FALSE,
-    size_of_val(&vertices[0]) as gl::int,
-    (3 * size_of::<f32>()) as *const _,
-  );
   gl::EnableVertexAttribArray(0);
-  gl::EnableVertexAttribArray(1);
+  gl::BufferData(
+    gl::ARRAY_BUFFER,
+    size_of_val(&*frame.vertices) as isize,
+    frame.vertices.as_ptr().cast(),
+    gl::STREAM_DRAW,
+  );
 
   let vs = gl::CreateShader(gl::VERTEX_SHADER);
   const VERTEX_SHADER: &str = r"
 #version 330 core
 layout (location = 0) in vec3 pos;
-layout (location = 1) in vec3 v_colour_i;
-out vec3 v_colour;
+// layout (location = 1) in vec3 v_colour_i;
+// out vec3 v_colour;
 void main() {
-  gl_Position = vec4(pos.x, pos.y, pos.z, 1.0);
-  v_colour = v_colour_i;
+  gl_Position = vec4(pos.x, pos.y, 0.0, 1.0);
+  // v_colour = v_colour_i;
 }
 ";
   gl::ShaderSource(
@@ -79,11 +77,12 @@ void main() {
   let fs = gl::CreateShader(gl::FRAGMENT_SHADER);
   const FRAGMENT_SHADER: &str = r"
 #version 330 core
-in vec3 v_colour;
+// in vec3 v_colour;
 out vec4 colour;
 
 void main() {
-  colour = vec4(v_colour, 1.0);
+  // colour = vec4(v_colour, 1.0);
+  colour = vec4(0.9, 0.8, 0.7, 1.0);
 }
 ";
   gl::ShaderSource(
@@ -104,6 +103,8 @@ void main() {
 
   check_gl_errors();
 
+  gl::Disable(gl::CULL_FACE);
+
   while !window.should_close() {
     window.swap_buffers();
 
@@ -120,14 +121,9 @@ void main() {
     gl::ClearColor(1.0, 0.99, 0.99, 1.0);
     gl::Clear(gl::COLOR_BUFFER_BIT);
 
-    vertices[1][1] = (-0.4 + glfw.get_time().sin() * 0.2) as f32;
-    gl::BufferData(
-      gl::ARRAY_BUFFER,
-      size_of_val(&vertices) as isize,
-      vertices.as_ptr().cast(),
-      gl::STREAM_DRAW,
-    );
-
-    gl::DrawArrays(gl::TRIANGLES, 0, 3);
+    gl::DrawArrays(gl::TRIANGLES, 0, frame.vertices.len() as gl::int);
+    check_gl_errors();
   }
+
+  Ok(())
 }
