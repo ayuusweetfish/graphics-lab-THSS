@@ -162,6 +162,9 @@ void main() {
 
   check_gl_errors();
 
+  gl::Enable(gl::DEPTH_TEST);
+  gl::DepthFunc(gl::LESS);
+
   gl::Enable(gl::CULL_FACE);
 
   while !window.should_close() {
@@ -178,7 +181,7 @@ void main() {
     }
 
     gl::ClearColor(1.0, 0.99, 0.99, 1.0);
-    gl::Clear(gl::COLOR_BUFFER_BIT);
+    gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
     gl::DrawArrays(gl::TRIANGLES, 0, frame.vertices.len() as gl::int);
     check_gl_errors();
