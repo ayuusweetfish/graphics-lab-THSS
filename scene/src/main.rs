@@ -146,7 +146,7 @@ void main() {
     gl::ARRAY_BUFFER,
     size_of_val(&skybox_verts) as isize,
     skybox_verts.as_ptr().cast(),
-    gl::STREAM_DRAW,
+    gl::STATIC_DRAW,
   );
 
   // Scene objects
@@ -221,8 +221,134 @@ void main() {
   let scene_uni_light_pos = gl::GetUniformLocation(scene_prog, "light_pos\0".as_ptr().cast());
   let scene_uni_cam_pos = gl::GetUniformLocation(scene_prog, "cam_pos\0".as_ptr().cast());
 
+  // Framebuffer
+  let mut fbo = 0;
+  gl::GenFramebuffers(1, &mut fbo);
+  gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
+  let (fb_w, fb_h) = window.get_framebuffer_size();
+  // Colour texture
+  let mut fbo_tex_c = 0;
+  gl::GenTextures(1, &mut fbo_tex_c);
+  gl::BindTexture(gl::TEXTURE_2D, fbo_tex_c);
+  gl::TexImage2D(
+    gl::TEXTURE_2D,
+    0,
+    gl::RGB as gl::int,
+    fb_w as gl::int, fb_h as gl::int, 0,
+    gl::RGB,
+    gl::UNSIGNED_BYTE,
+    0 as *const _
+  );
+  gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as gl::int);
+  gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::int);
+  gl::FramebufferTexture2D(gl::FRAMEBUFFER,
+    gl::COLOR_ATTACHMENT0,
+    gl::TEXTURE_2D, fbo_tex_c, 0);
+  // Depth texture
+  let mut fbo_tex_d = 0;
+  gl::GenTextures(1, &mut fbo_tex_d);
+  gl::BindTexture(gl::TEXTURE_2D, fbo_tex_d);
+  gl::TexImage2D(
+    gl::TEXTURE_2D,
+    0,
+    gl::DEPTH_COMPONENT32 as gl::int,
+    fb_w as gl::int, fb_h as gl::int, 0,
+    gl::DEPTH_COMPONENT,
+    gl::UNSIGNED_INT,
+    0 as *const _
+  );
+  gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as gl::int);
+  gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::int);
+  gl::FramebufferTexture2D(gl::FRAMEBUFFER,
+    gl::DEPTH_ATTACHMENT,
+    gl::TEXTURE_2D, fbo_tex_d, 0);
+/*
+  let mut fbo_rbo = 0;
+  gl::GenRenderbuffers(1, &mut fbo_rbo);
+  gl::BindRenderbuffer(gl::RENDERBUFFER, fbo_rbo);
+  gl::RenderbufferStorage(gl::RENDERBUFFER,
+    gl::DEPTH_COMPONENT32, fb_w as gl::int, fb_h as gl::int);
+  gl::BindRenderbuffer(gl::RENDERBUFFER, 0);
+  gl::FramebufferRenderbuffer(gl::FRAMEBUFFER,
+    gl::DEPTH_ATTACHMENT, gl::RENDERBUFFER, fbo_rbo);
+*/
+  // Unbind framebuffer
+  gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+
+  // Program for rendering to screen
+  let fb_prog = program(r"
+#version 330 core
+layout (location = 0) in vec2 v_pos;
+out vec2 f_tex_coord;
+
+void main() {
+  gl_Position = vec4(v_pos, 0.0, 1.0);
+  f_tex_coord = vec2((1 + v_pos.x) / 2, (1 + v_pos.y) / 2);
+}
+", r"
+#version 330 core
+uniform sampler2D tex;
+in vec2 f_tex_coord;
+out vec4 out_colour;
+
+void main() {
+  out_colour = texture(tex, f_tex_coord);
+  // Simple blur
+  // https://www.shadertoy.com/view/Xltfzj
+  int n_dirs = 8;
+  int n_steps = 6;
+  float radius = 6.0 / 400;
+  float step = radius / n_steps;
+  float d = 0.0;
+  for (int i = 0; i < n_dirs; i++) {
+    d += 6.28318530718 / n_dirs;
+    float dx = cos(d) * step;
+    float dy = sin(d) * step;
+    float x = f_tex_coord.x + dx;
+    float y = f_tex_coord.y + dy;
+    for (int j = 0; j < n_steps; j++) {
+      out_colour += texture(tex, vec2(x, y));
+      x += dx;
+      y += dy;
+    }
+  }
+  out_colour /= (n_dirs * n_steps + 1);
+}
+");
+  let fb_uni_tex = gl::GetUniformLocation(fb_prog, "tex\0".as_ptr().cast());
+  gl::UseProgram(fb_prog);
+  gl::Uniform1i(fb_uni_tex, 0);
+
+  // VAO and VBO
+  let mut fb_vao = 0;
+  gl::GenVertexArrays(1, &mut fb_vao);
+  gl::BindVertexArray(fb_vao);
+  let mut fb_vbo = 0;
+  gl::GenBuffers(1, &mut fb_vbo);
+  gl::BindBuffer(gl::ARRAY_BUFFER, fb_vbo);
+
+  gl::EnableVertexAttribArray(0);
+  gl::VertexAttribPointer(
+    0,
+    2, gl::FLOAT, gl::FALSE,
+    (2 * size_of::<f32>()) as gl::int,
+    0 as *const _,
+  );
+
+  let fb_verts: [f32; 12] = [
+    -1.0, -1.0, -1.0,  1.0,  1.0,  1.0,
+    -1.0, -1.0,  1.0, -1.0,  1.0,  1.0,
+  ];
+  gl::BufferData(
+    gl::ARRAY_BUFFER,
+    size_of_val(&fb_verts) as isize,
+    fb_verts.as_ptr().cast(),
+    gl::STATIC_DRAW,
+  );
+
   check_gl_errors();
 
+  // Data kept between frames
   let frame_len = 1.0 / 48.0;
   let mut last_time = glfw.get_time() as f32;
   let mut accum_time = 0.0;
@@ -239,6 +365,9 @@ void main() {
     0.1,
     100.0,
   );
+
+  let mut filter_on = false;
+  let mut last_filter_key_press = false;
 
   // Hide cursor
   window.set_cursor_mode(glfw::CursorMode::Disabled);
@@ -269,12 +398,22 @@ void main() {
 
     // Frame data
     let frame = &frames[frame_num];
+    gl::BindVertexArray(scene_vao);
+    gl::BindBuffer(gl::ARRAY_BUFFER, scene_vbo);
     gl::BufferData(
       gl::ARRAY_BUFFER,
       size_of_val(&*frame.vertices) as isize,
       frame.vertices.as_ptr().cast(),
       gl::STREAM_DRAW,
     );
+
+    // Toggled filter?
+    let filter_key_press =
+      window.get_key(glfw::Key::Space) == glfw::Action::Press;
+    if !last_filter_key_press && filter_key_press {
+      filter_on = !filter_on;
+    }
+    last_filter_key_press = filter_key_press;
 
     // Camera panning
     let move_dist = delta_time * 10.0;
@@ -331,7 +470,16 @@ void main() {
     // Light
     let light_pos = glm::vec3(6.0, -3.0, 6.0);
 
+    // Draw to framebuffer if filter is on
+    if filter_on {
+      gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
+    } else {
+      gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+    }
+
     // Draw
+    // https://www.reddit.com/r/opengl/comments/1pxzzt/comment/cd79lxt/?utm_source=share&utm_medium=web2x&context=3
+    gl::DepthMask(gl::TRUE);
     gl::ClearColor(1.0, 0.99, 0.99, 1.0);
     gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
@@ -348,7 +496,6 @@ void main() {
     gl::Disable(gl::CULL_FACE);
     gl::Disable(gl::DEPTH_TEST);
     gl::DrawArrays(gl::TRIANGLES, 0, 36);
-    gl::DepthMask(gl::TRUE);
 
     // Scene
     gl::UseProgram(scene_prog);
@@ -359,10 +506,24 @@ void main() {
     // Draw
     gl::BindVertexArray(scene_vao);
     gl::BindBuffer(gl::ARRAY_BUFFER, scene_vbo);
+    gl::DepthMask(gl::TRUE);
     gl::Enable(gl::CULL_FACE);
     gl::Enable(gl::DEPTH_TEST);
     gl::DepthFunc(gl::LESS);
     gl::DrawArrays(gl::TRIANGLES, 0, frame.vertices.len() as gl::int);
+
+    if filter_on {
+      gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+      gl::UseProgram(fb_prog);
+      gl::ActiveTexture(gl::TEXTURE0);
+      gl::BindTexture(gl::TEXTURE_2D, fbo_tex_c);
+      gl::BindVertexArray(fb_vao);
+      gl::BindBuffer(gl::ARRAY_BUFFER, fb_vbo);
+      gl::DepthMask(gl::FALSE);
+      gl::Disable(gl::CULL_FACE);
+      gl::Disable(gl::DEPTH_TEST);
+      gl::DrawArrays(gl::TRIANGLES, 0, 6);
+    }
 
     check_gl_errors();
   }
