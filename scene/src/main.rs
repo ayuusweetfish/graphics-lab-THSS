@@ -62,8 +62,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 layout (location = 0) in vec3 pos;
 // layout (location = 1) in vec3 v_colour_i;
 // out vec3 v_colour;
+uniform mat4 VP;
 void main() {
-  gl_Position = vec4(pos.x, pos.y, 0.0, 1.0);
+  gl_Position = VP * vec4(pos.x, pos.y, pos.z, 1.0);
   // v_colour = v_colour_i;
 }
 ";
@@ -102,6 +103,42 @@ void main() {
   gl::UseProgram(prog);
 
   check_gl_errors();
+
+  // Camera
+  let cam_pos = (9.02922, -8.50027, 7.65063);
+  // let cam_ori = (0.780483, 0.483536, 0.208704, 0.336872);
+  let cam_look = (3.27, -2.79, 3.62);
+
+  let uni_vp = gl::GetUniformLocation(prog, "VP".as_ptr().cast());
+/*
+  let mut mvp = [[0f32; 4]; 4];
+  mvp[0][0] = 1.0;
+  mvp[1][1] = 2.0;
+  mvp[2][2] = 1.0;
+  mvp[3][3] = 1.0;
+*/
+  let v_mat = glm::ext::look_at(
+    glm::Vector3::new(cam_pos.0, cam_pos.1, cam_pos.2),
+    glm::Vector3::new(cam_look.0, cam_look.1, cam_look.2),
+    glm::Vector3::new(0.0, 0.0, 1.0),
+  );
+  let p_mat = glm::ext::perspective(
+    0.6911,
+    16.0 / 9.0,
+    0.1,
+    100.0,
+  );
+  let vp_mat = p_mat * v_mat;
+  let mut vp = [[0f32; 4]; 4];
+  for i in 0..4 {
+    for j in 0..4 {
+      vp[i][j] = vp_mat[i][j];
+    }
+  }
+  println!("{:?}", p_mat);
+  println!("{:?}", v_mat);
+  println!("{:?}", vp);
+  gl::UniformMatrix4fv(uni_vp, 1, gl::FALSE, vp.as_ptr().cast());
 
   gl::Disable(gl::CULL_FACE);
 

@@ -23,7 +23,7 @@ pub fn load<P: AsRef<std::path::Path>>(p: P)
         ) = shape.primitive {
           for vi in [vi0, vi1, vi2] {
             let v = object.vertices[vi];
-            vertices.push([v.x as f32 / 10.0, v.y as f32 / 10.0, v.z as f32 / 10.0]);
+            vertices.push([v.x as f32, v.y as f32, v.z as f32]);
           }
         }
       }
