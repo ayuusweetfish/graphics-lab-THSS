@@ -455,22 +455,26 @@ void main() {
 
     // Camera panning
     let move_dist = delta_time * 10.0;
-    if window.get_key(glfw::Key::W) == glfw::Action::Press {
+    if window.get_key(glfw::Key::W) == glfw::Action::Press
+    || window.get_key(glfw::Key::Up) == glfw::Action::Press {
       cam_pos = cam_pos + cam_ori * move_dist;
     }
-    if window.get_key(glfw::Key::S) == glfw::Action::Press {
+    if window.get_key(glfw::Key::S) == glfw::Action::Press
+    || window.get_key(glfw::Key::Down) == glfw::Action::Press {
       cam_pos = cam_pos - cam_ori * move_dist;
     }
-    if window.get_key(glfw::Key::A) == glfw::Action::Press {
+    if window.get_key(glfw::Key::A) == glfw::Action::Press
+    || window.get_key(glfw::Key::Left) == glfw::Action::Press {
       cam_pos = cam_pos - glm::cross(cam_ori, cam_up) * move_dist;
     }
-    if window.get_key(glfw::Key::D) == glfw::Action::Press {
+    if window.get_key(glfw::Key::D) == glfw::Action::Press
+    || window.get_key(glfw::Key::Right) == glfw::Action::Press {
       cam_pos = cam_pos + glm::cross(cam_ori, cam_up) * move_dist;
     }
-    if window.get_key(glfw::Key::Tab) == glfw::Action::Press {
+    if window.get_key(glfw::Key::Q) == glfw::Action::Press {
       cam_pos = cam_pos + cam_up * move_dist;
     }
-    if window.get_key(glfw::Key::LeftShift) == glfw::Action::Press {
+    if window.get_key(glfw::Key::Z) == glfw::Action::Press {
       cam_pos = cam_pos - cam_up * move_dist;
     }
 
