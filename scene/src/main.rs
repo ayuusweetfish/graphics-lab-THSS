@@ -241,6 +241,8 @@ void main() {
   );
   gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as gl::int);
   gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::int);
+  gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::MIRRORED_REPEAT as gl::int);
+  gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::MIRRORED_REPEAT as gl::int);
   gl::FramebufferTexture2D(gl::FRAMEBUFFER,
     gl::COLOR_ATTACHMENT0,
     gl::TEXTURE_2D, fbo_tex_c, 0);
@@ -288,36 +290,56 @@ void main() {
 ", r"
 #version 330 core
 uniform sampler2D tex;
+uniform sampler2D noise;
 in vec2 f_tex_coord;
 out vec4 out_colour;
 
 void main() {
-  out_colour = texture(tex, f_tex_coord);
-  // Simple blur
-  // https://www.shadertoy.com/view/Xltfzj
-  int n_dirs = 8;
-  int n_steps = 6;
-  float radius = 6.0 / 400;
-  float step = radius / n_steps;
-  float d = 0.0;
-  for (int i = 0; i < n_dirs; i++) {
-    d += 6.28318530718 / n_dirs;
-    float dx = cos(d) * step;
-    float dy = sin(d) * step;
-    float x = f_tex_coord.x + dx;
-    float y = f_tex_coord.y + dy;
-    for (int j = 0; j < n_steps; j++) {
-      out_colour += texture(tex, vec2(x, y));
-      x += dx;
-      y += dy;
-    }
+  // Frosted glass
+  vec2 offset = (texture(noise, f_tex_coord).rg - vec2(0.5, 0.5)) * 0.03;
+  out_colour = vec4(0);
+  for (int i = 0; i <= 4; i++) {
+    out_colour += texture(tex, f_tex_coord + offset * i / 4) / 5;
   }
-  out_colour /= (n_dirs * n_steps + 1);
 }
 ");
+
   let fb_uni_tex = gl::GetUniformLocation(fb_prog, "tex\0".as_ptr().cast());
+  let fb_uni_noise = gl::GetUniformLocation(fb_prog, "noise\0".as_ptr().cast());
   gl::UseProgram(fb_prog);
   gl::Uniform1i(fb_uni_tex, 0);
+  gl::Uniform1i(fb_uni_noise, 1);
+
+  // Noise texture
+  let mut fb_tex_noise = 0;
+  gl::GenTextures(1, &mut fb_tex_noise);
+  gl::BindTexture(gl::TEXTURE_2D, fb_tex_noise);
+  const NOISE_TEX_WIDTH: usize = 512;
+  const NOISE_TEX_HEIGHT: usize = 288;
+  let mut buf_noise = [[[0u8; 3]; NOISE_TEX_WIDTH]; NOISE_TEX_HEIGHT];
+  let mut seed = 20211020u64;
+  for i in 0..NOISE_TEX_HEIGHT {
+    for j in 0..NOISE_TEX_WIDTH {
+      for _ in 0..(i + j) % 17 {
+        seed = (seed as u64 * 1103515245 + 12345) & 0x7fffffff;
+      }
+      seed = (seed as u64 * 1103515245 + 12345) & 0x7fffffff;
+      buf_noise[i][j][0] = ((seed >> 16) & 0xff) as u8;
+      seed = (seed as u64 * 1103515245 + 12345) & 0x7fffffff;
+      buf_noise[i][j][1] = ((seed >> 16) & 0xff) as u8;
+    }
+  }
+  gl::TexImage2D(
+    gl::TEXTURE_2D,
+    0,
+    gl::RGB as gl::int,
+    NOISE_TEX_WIDTH as gl::int, NOISE_TEX_HEIGHT as gl::int, 0,
+    gl::RGB,
+    gl::UNSIGNED_BYTE,
+    buf_noise.as_ptr().cast()
+  );
+  gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as gl::int);
+  gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::int);
 
   // VAO and VBO
   let mut fb_vao = 0;
@@ -517,6 +539,8 @@ void main() {
       gl::UseProgram(fb_prog);
       gl::ActiveTexture(gl::TEXTURE0);
       gl::BindTexture(gl::TEXTURE_2D, fbo_tex_c);
+      gl::ActiveTexture(gl::TEXTURE1);
+      gl::BindTexture(gl::TEXTURE_2D, fb_tex_noise);
       gl::BindVertexArray(fb_vao);
       gl::BindBuffer(gl::ARRAY_BUFFER, fb_vbo);
       gl::DepthMask(gl::FALSE);
