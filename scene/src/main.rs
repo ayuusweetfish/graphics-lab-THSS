@@ -159,9 +159,9 @@ void main() {
 
   // Load frames
   let mut frames = vec![];
-  for i in 1..=1 {
-    //frames.push(scene_loader::load(format!("1a/1a_{:0>6}.obj", i))?);
-    frames.push(scene_loader::load(format!("trees.obj"))?);
+  for i in 1..=120 {
+    println!("{}", i);
+    frames.push(scene_loader::load(format!("trees/trees_{:0>6}.obj", i))?);
   }
 
   gl::EnableVertexAttribArray(0);
