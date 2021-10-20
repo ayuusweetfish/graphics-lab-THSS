@@ -160,7 +160,8 @@ void main() {
   // Load frames
   let mut frames = vec![];
   for i in 1..=1 {
-    frames.push(scene_loader::load(format!("1a/1a_{:0>6}.obj", i))?);
+    //frames.push(scene_loader::load(format!("1a/1a_{:0>6}.obj", i))?);
+    frames.push(scene_loader::load(format!("trees.obj"))?);
   }
 
   gl::EnableVertexAttribArray(0);
@@ -211,8 +212,8 @@ in float f_tint;
 out vec4 out_colour;
 
 void main() {
-  vec3 ambient_colour = vec3(0.1, 0.05, 0.0);
-  vec3 light_colour = vec3(0.9, 0.8, 0.7);
+  vec3 ambient_colour = vec3(0.1, 0.15, 0.05);
+  vec3 light_colour = vec3(0.66, 0.7, 0.5);
 
   vec3 n = normalize(f_normal);
 
@@ -392,10 +393,9 @@ void main() {
   let mut accum_time = 0.0;
   let mut frame_num = 0;
 
-  let mut cam_pos = glm::vec3(9.02922, -8.50027, 7.65063);
-  let mut cam_up = glm::normalize(glm::vec3(8.72799, -8.21633, 8.48306) - cam_pos);
+  let mut cam_pos = glm::vec3(0.0, 1.0, 10.0);
   let cam_up = glm::vec3(0.0, 1.0, 0.0);
-  let mut cam_ori = glm::normalize(glm::vec3(4.01535, -3.77411, 4.22417) - cam_pos);
+  let mut cam_ori = glm::vec3(0.0, 0.0, -1.0);
 
   let p_mat = glm::ext::perspective(
     0.5236,
@@ -506,7 +506,7 @@ void main() {
     let vnopan_p = p_mat * vnopan;
 
     // Light
-    let light_pos = glm::vec3(6.0, -3.0, 6.0);
+    let light_pos = glm::vec3(4.0, 1.0, 6.0);
 
     // Draw to framebuffer if filter is on
     if filter_on {

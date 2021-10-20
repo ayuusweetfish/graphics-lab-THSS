@@ -10,9 +10,10 @@ fn aabb_overlap(
   a: (f32, f32, f32, f32, f32, f32),
   b: (f32, f32, f32, f32, f32, f32),
 ) -> bool {
-  a.0.max(b.0) < a.1.min(b.1) &&
-  a.2.max(b.2) < a.3.min(b.3) &&
-  a.4.max(b.4) < a.5.min(b.5)
+  let eps = 1e-6;
+  a.0.max(b.0) < a.1.min(b.1) + eps &&
+  a.2.max(b.2) < a.3.min(b.3) + eps &&
+  a.4.max(b.4) < a.5.min(b.5) + eps
 }
 
 pub fn load<P: AsRef<std::path::Path>>(p: P)
