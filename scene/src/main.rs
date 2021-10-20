@@ -177,19 +177,29 @@ void main() {
     size_of_val(&frames[0].vertices[0]) as gl::int,
     (3 * size_of::<f32>()) as *const _,
   );
+  gl::EnableVertexAttribArray(2);
+  gl::VertexAttribPointer(
+    2,
+    1, gl::FLOAT, gl::FALSE,
+    size_of_val(&frames[0].vertices[0]) as gl::int,
+    (6 * size_of::<f32>()) as *const _,
+  );
 
   let scene_prog = program(r"
 #version 330 core
 uniform mat4 VP;
 layout (location = 0) in vec3 v_pos;
 layout (location = 1) in vec3 v_normal;
+layout (location = 2) in float v_tint;
 out vec3 f_pos;
 out vec3 f_normal;
+out float f_tint;
 
 void main() {
   gl_Position = VP * vec4(v_pos, 1.0);
   f_pos = v_pos;
   f_normal = v_normal;
+  f_tint = v_tint;
 }
 ", r"
 #version 330 core
@@ -197,6 +207,7 @@ uniform vec3 light_pos;
 uniform vec3 cam_pos;
 in vec3 f_pos;
 in vec3 f_normal;
+in float f_tint;
 out vec4 out_colour;
 
 void main() {
@@ -217,6 +228,7 @@ void main() {
   float spec = 0.3 * pow(max(dot(n, h), 0.0), 16);
 
   out_colour = vec4(ambient_colour + (diff + spec) * light_colour, 1.0);
+  out_colour *= vec4(1.0, 1.0 - f_tint * 0.3, 1.0 - f_tint * 0.4, 1.0);
 }
 ");
 
