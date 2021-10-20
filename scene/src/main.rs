@@ -73,12 +73,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   gl::ActiveTexture(gl::TEXTURE0);
   gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_tex);
   for (i, file) in [
-    "skybox/right.jpg",
-    "skybox/left.jpg",
-    "skybox/top.jpg",
-    "skybox/bottom.jpg",
-    "skybox/front.jpg",
-    "skybox/back.jpg",
+    "skybox/px.jpg",
+    "skybox/nx.jpg",
+    "skybox/py.jpg",
+    "skybox/ny.jpg",
+    "skybox/pz.jpg",
+    "skybox/nz.jpg",
   ].into_iter().enumerate() {
     let img = image::io::Reader::open(file)?.decode()?;
     let (w, h) = img.dimensions();
@@ -159,7 +159,7 @@ void main() {
 
   // Load frames
   let mut frames = vec![];
-  for i in 1..=120 {
+  for i in 1..=1 {
     println!("{}", i);
     frames.push(scene_loader::load(format!("trees/trees_{:0>6}.obj", i))?);
   }
