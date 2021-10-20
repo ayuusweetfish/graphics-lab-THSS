@@ -209,8 +209,12 @@ void main() {
   float diff = 0.7 * max(dot(n, light_dir), 0);
 
   vec3 view_dir = normalize(cam_pos - f_pos);
+/*
   vec3 refl_dir = reflect(-light_dir, n);
   float spec = 0.3 * pow(max(dot(view_dir, refl_dir), 0.0), 16);
+*/
+  vec3 h = normalize(view_dir + light_dir);
+  float spec = 0.3 * pow(max(dot(n, h), 0.0), 16);
 
   out_colour = vec4(ambient_colour + (diff + spec) * light_colour, 1.0);
 }
