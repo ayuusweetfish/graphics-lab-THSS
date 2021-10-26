@@ -154,7 +154,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     uniform mat4 VP;
     layout (location = 0) in vec3 v_pos;
     layout (location = 1) in vec3 v_normal;
-    layout (location = 2) in float v_tint;
+    layout (location = 2) in vec3 v_texcoord;
+    layout (location = 3) in uint v_texid;
     out vec3 f_pos;
     out vec3 f_normal;
     out float f_tint;
@@ -163,7 +164,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       gl_Position = VP * vec4(v_pos, 1.0);
       f_pos = v_pos;
       f_normal = v_normal;
-      f_tint = v_tint;
+      f_tint = 0;
     }
   ", r"
     #version 330 core
@@ -206,14 +207,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   gl::BindBuffer(gl::ARRAY_BUFFER, scene_vbo);
 
   // Load scene
-  let frame = scene_loader::load("1.obj")?;
+  let frame = scene_loader::load("trees2/trees2.obj")?;
 
   gl::EnableVertexAttribArray(0);
   gl::VertexAttribPointer(
     0,
     3, gl::FLOAT, gl::FALSE,
     size_of_val(&frame.vertices[0]) as gl::int,
-    0 as *const _,
+    (0 * size_of::<f32>()) as *const _,
   );
   gl::EnableVertexAttribArray(1);
   gl::VertexAttribPointer(
@@ -228,6 +229,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     1, gl::FLOAT, gl::FALSE,
     size_of_val(&frame.vertices[0]) as gl::int,
     (6 * size_of::<f32>()) as *const _,
+  );
+  gl::EnableVertexAttribArray(3);
+  gl::VertexAttribPointer(
+    3,
+    1, gl::UNSIGNED_BYTE, gl::FALSE,
+    size_of_val(&frame.vertices[0]) as gl::int,
+    (8 * size_of::<f32>()) as *const _,
   );
 
   // Framebuffer
