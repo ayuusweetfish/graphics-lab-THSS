@@ -154,30 +154,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     uniform mat4 VP;
     layout (location = 0) in vec3 v_pos;
     layout (location = 1) in vec3 v_normal;
-    layout (location = 2) in vec3 v_texcoord;
+    layout (location = 2) in vec2 v_texcoord;
     layout (location = 3) in uint v_texid;
     out vec3 f_pos;
     out vec3 f_normal;
-    out float f_tint;
+    out vec2 f_texcoord;
+    out float f_texid;
 
     void main() {
       gl_Position = VP * vec4(v_pos, 1.0);
       f_pos = v_pos;
       f_normal = v_normal;
-      f_tint = 0;
+      f_texcoord = v_texcoord;
+      f_texid = v_texid;
     }
   ", r"
     #version 330 core
     uniform vec3 light_pos;
     uniform vec3 cam_pos;
+    uniform sampler2D textures[16];
     in vec3 f_pos;
     in vec3 f_normal;
-    in float f_tint;
+    in vec2 f_texcoord;
+    in float f_texid;
     out vec4 out_colour;
 
     void main() {
-      vec3 ambient_colour = vec3(0.1, 0.15, 0.05);
-      vec3 light_colour = vec3(0.66, 0.7, 0.5);
+      vec3 ambient_colour = vec3(0.2);
+      vec3 light_colour = vec3(0.8);
 
       vec3 n = normalize(f_normal);
 
@@ -189,7 +193,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       float spec = 0.3 * pow(max(dot(n, h), 0.0), 16);
 
       out_colour = vec4(ambient_colour + (diff + spec) * light_colour, 1.0);
-      out_colour *= vec4(1.0, 1.0 - f_tint * 0.3, 1.0 - f_tint * 0.4, 1.0);
+      if (f_texid < 16)
+        out_colour *= texture(textures[int(f_texid + 0.5)], f_texcoord);
+      else
+        out_colour *= vec4(0.7, 0.9, 0.6, 1);
     }
   ");
 
@@ -197,6 +204,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   let scene_uni_vp = gl::GetUniformLocation(scene_prog, "VP\0".as_ptr().cast());
   let scene_uni_light_pos = gl::GetUniformLocation(scene_prog, "light_pos\0".as_ptr().cast());
   let scene_uni_cam_pos = gl::GetUniformLocation(scene_prog, "cam_pos\0".as_ptr().cast());
+  // Textures
+  gl::UseProgram(scene_prog);
+  for i in 0..16 {
+    let uni = gl::GetUniformLocation(scene_prog, format!("textures[{}]\0", i).as_ptr().cast());
+    gl::Uniform1i(uni, i);
+  }
 
   // Vertices
   let mut scene_vao = 0;
@@ -226,7 +239,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   gl::EnableVertexAttribArray(2);
   gl::VertexAttribPointer(
     2,
-    1, gl::FLOAT, gl::FALSE,
+    2, gl::FLOAT, gl::FALSE,
     size_of_val(&frame.vertices[0]) as gl::int,
     (6 * size_of::<f32>()) as *const _,
   );
@@ -237,6 +250,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     size_of_val(&frame.vertices[0]) as gl::int,
     (8 * size_of::<f32>()) as *const _,
   );
+
+  // Load textures
+  let mut scene_texs = vec![];
+  for (i, (w, h, buf)) in frame.textures.into_iter().enumerate() {
+    let mut mat_tex = 0;
+    gl::GenTextures(1, &mut mat_tex);
+    gl::BindTexture(gl::TEXTURE_2D, mat_tex);
+    gl::TexImage2D(
+      gl::TEXTURE_2D,
+      0,
+      gl::RGB as gl::int,
+      w as gl::int, h as gl::int, 0,
+      gl::RGB,
+      gl::UNSIGNED_BYTE,
+      buf.as_ptr().cast()
+    );
+    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as gl::int);
+    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::int);
+    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::MIRRORED_REPEAT as gl::int);
+    gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::MIRRORED_REPEAT as gl::int);
+    scene_texs.push(mat_tex);
+  }
 
   // Framebuffer
   let mut fbo = 0;
@@ -522,6 +557,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Scene
     gl::UseProgram(scene_prog);
+    // Textures
+    for (i, mat_tex) in scene_texs.iter().enumerate() {
+      gl::ActiveTexture(gl::TEXTURE0 + (i as u32));
+      gl::BindTexture(gl::TEXTURE_2D, *mat_tex);
+    }
     // Uniforms
     gl::UniformMatrix4fv(scene_uni_vp, 1, gl::FALSE, vp.as_array().as_ptr().cast());
     gl::Uniform3f(scene_uni_cam_pos, cam_pos.x, cam_pos.y, cam_pos.z);

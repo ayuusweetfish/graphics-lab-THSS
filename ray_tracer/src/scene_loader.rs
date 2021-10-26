@@ -78,7 +78,7 @@ pub fn load<P: AsRef<std::path::Path>>(p: P)
             vertices.push(Vertex {
               pos:  (v.x as f32, v.y as f32, v.z as f32),
               norm: (n.x as f32, n.y as f32, n.z as f32),
-              texc: (t.u as f32, t.v as f32),
+              texc: (t.u as f32, 1.0 - t.v as f32),
               texid: texid as u8,
             });
           }
