@@ -2,7 +2,6 @@ mod gl;
 mod scene_loader;
 
 use glfw::Context;
-use wavefront_obj::obj;
 use image::GenericImageView;
 
 use core::mem::{size_of, size_of_val};
@@ -100,25 +99,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_R, gl::CLAMP_TO_EDGE as gl::int);
 
   let skybox_prog = program(r"
-#version 330 core
-uniform mat4 VP;
-layout (location = 0) in vec3 v_pos;
-out vec3 f_tex_coord;
+    #version 330 core
+    uniform mat4 VP;
+    layout (location = 0) in vec3 v_pos;
+    out vec3 f_tex_coord;
 
-void main() {
-  f_tex_coord = v_pos;
-  gl_Position = (VP * vec4(v_pos, 1.0)).xyww;
-}
-", r"
-#version 330 core
-uniform samplerCube skybox;
-in vec3 f_tex_coord;
-out vec4 out_colour;
+    void main() {
+      f_tex_coord = v_pos;
+      gl_Position = (VP * vec4(v_pos, 1.0)).xyww;
+    }
+  ", r"
+    #version 330 core
+    uniform samplerCube skybox;
+    in vec3 f_tex_coord;
+    out vec4 out_colour;
 
-void main() {
-  out_colour = texture(skybox, f_tex_coord);
-}
-");
+    void main() {
+      out_colour = texture(skybox, f_tex_coord);
+    }
+  ");
 
   // Uniform locations
   let skybox_uni_vp = gl::GetUniformLocation(skybox_prog, "VP\0".as_ptr().cast());
@@ -150,6 +149,55 @@ void main() {
   );
 
   // Scene objects
+  let scene_prog = program(r"
+    #version 330 core
+    uniform mat4 VP;
+    layout (location = 0) in vec3 v_pos;
+    layout (location = 1) in vec3 v_normal;
+    layout (location = 2) in float v_tint;
+    out vec3 f_pos;
+    out vec3 f_normal;
+    out float f_tint;
+
+    void main() {
+      gl_Position = VP * vec4(v_pos, 1.0);
+      f_pos = v_pos;
+      f_normal = v_normal;
+      f_tint = v_tint;
+    }
+  ", r"
+    #version 330 core
+    uniform vec3 light_pos;
+    uniform vec3 cam_pos;
+    in vec3 f_pos;
+    in vec3 f_normal;
+    in float f_tint;
+    out vec4 out_colour;
+
+    void main() {
+      vec3 ambient_colour = vec3(0.1, 0.15, 0.05);
+      vec3 light_colour = vec3(0.66, 0.7, 0.5);
+
+      vec3 n = normalize(f_normal);
+
+      vec3 light_dir = normalize(light_pos - f_pos);
+      float diff = 0.7 * max(dot(n, light_dir), 0);
+
+      vec3 view_dir = normalize(cam_pos - f_pos);
+      vec3 h = normalize(view_dir + light_dir);
+      float spec = 0.3 * pow(max(dot(n, h), 0.0), 16);
+
+      out_colour = vec4(ambient_colour + (diff + spec) * light_colour, 1.0);
+      out_colour *= vec4(1.0, 1.0 - f_tint * 0.3, 1.0 - f_tint * 0.4, 1.0);
+    }
+  ");
+
+  // Uniform locations
+  let scene_uni_vp = gl::GetUniformLocation(scene_prog, "VP\0".as_ptr().cast());
+  let scene_uni_light_pos = gl::GetUniformLocation(scene_prog, "light_pos\0".as_ptr().cast());
+  let scene_uni_cam_pos = gl::GetUniformLocation(scene_prog, "cam_pos\0".as_ptr().cast());
+
+  // Vertices
   let mut scene_vao = 0;
   gl::GenVertexArrays(1, &mut scene_vao);
   gl::BindVertexArray(scene_vao);
@@ -157,86 +205,30 @@ void main() {
   gl::GenBuffers(1, &mut scene_vbo);
   gl::BindBuffer(gl::ARRAY_BUFFER, scene_vbo);
 
-  // Load frames
-  let mut frames = vec![];
-  for i in 1..=120 {
-    println!("{}", i);
-    frames.push(scene_loader::load(format!("trees/trees_{:0>6}.obj", i))?);
-  }
+  // Load scene
+  let frame = scene_loader::load("1.obj")?;
 
   gl::EnableVertexAttribArray(0);
   gl::VertexAttribPointer(
     0,
     3, gl::FLOAT, gl::FALSE,
-    size_of_val(&frames[0].vertices[0]) as gl::int,
+    size_of_val(&frame.vertices[0]) as gl::int,
     0 as *const _,
   );
   gl::EnableVertexAttribArray(1);
   gl::VertexAttribPointer(
     1,
     3, gl::FLOAT, gl::FALSE,
-    size_of_val(&frames[0].vertices[0]) as gl::int,
+    size_of_val(&frame.vertices[0]) as gl::int,
     (3 * size_of::<f32>()) as *const _,
   );
   gl::EnableVertexAttribArray(2);
   gl::VertexAttribPointer(
     2,
     1, gl::FLOAT, gl::FALSE,
-    size_of_val(&frames[0].vertices[0]) as gl::int,
+    size_of_val(&frame.vertices[0]) as gl::int,
     (6 * size_of::<f32>()) as *const _,
   );
-
-  let scene_prog = program(r"
-#version 330 core
-uniform mat4 VP;
-layout (location = 0) in vec3 v_pos;
-layout (location = 1) in vec3 v_normal;
-layout (location = 2) in float v_tint;
-out vec3 f_pos;
-out vec3 f_normal;
-out float f_tint;
-
-void main() {
-  gl_Position = VP * vec4(v_pos, 1.0);
-  f_pos = v_pos;
-  f_normal = v_normal;
-  f_tint = v_tint;
-}
-", r"
-#version 330 core
-uniform vec3 light_pos;
-uniform vec3 cam_pos;
-in vec3 f_pos;
-in vec3 f_normal;
-in float f_tint;
-out vec4 out_colour;
-
-void main() {
-  vec3 ambient_colour = vec3(0.1, 0.15, 0.05);
-  vec3 light_colour = vec3(0.66, 0.7, 0.5);
-
-  vec3 n = normalize(f_normal);
-
-  vec3 light_dir = normalize(light_pos - f_pos);
-  float diff = 0.7 * max(dot(n, light_dir), 0);
-
-  vec3 view_dir = normalize(cam_pos - f_pos);
-/*
-  vec3 refl_dir = reflect(-light_dir, n);
-  float spec = 0.3 * pow(max(dot(view_dir, refl_dir), 0.0), 16);
-*/
-  vec3 h = normalize(view_dir + light_dir);
-  float spec = 0.3 * pow(max(dot(n, h), 0.0), 16);
-
-  out_colour = vec4(ambient_colour + (diff + spec) * light_colour, 1.0);
-  out_colour *= vec4(1.0, 1.0 - f_tint * 0.3, 1.0 - f_tint * 0.4, 1.0);
-}
-");
-
-  // Uniform locations
-  let scene_uni_vp = gl::GetUniformLocation(scene_prog, "VP\0".as_ptr().cast());
-  let scene_uni_light_pos = gl::GetUniformLocation(scene_prog, "light_pos\0".as_ptr().cast());
-  let scene_uni_cam_pos = gl::GetUniformLocation(scene_prog, "cam_pos\0".as_ptr().cast());
 
   // Framebuffer
   let mut fbo = 0;
@@ -244,9 +236,9 @@ void main() {
   gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
   let (fb_w, fb_h) = window.get_framebuffer_size();
   // Colour texture
-  let mut fbo_tex_c = 0;
-  gl::GenTextures(1, &mut fbo_tex_c);
-  gl::BindTexture(gl::TEXTURE_2D, fbo_tex_c);
+  let mut fb_tex_c = 0;
+  gl::GenTextures(1, &mut fb_tex_c);
+  gl::BindTexture(gl::TEXTURE_2D, fb_tex_c);
   gl::TexImage2D(
     gl::TEXTURE_2D,
     0,
@@ -262,11 +254,11 @@ void main() {
   gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::MIRRORED_REPEAT as gl::int);
   gl::FramebufferTexture2D(gl::FRAMEBUFFER,
     gl::COLOR_ATTACHMENT0,
-    gl::TEXTURE_2D, fbo_tex_c, 0);
+    gl::TEXTURE_2D, fb_tex_c, 0);
   // Depth texture
-  let mut fbo_tex_d = 0;
-  gl::GenTextures(1, &mut fbo_tex_d);
-  gl::BindTexture(gl::TEXTURE_2D, fbo_tex_d);
+  let mut fb_tex_d = 0;
+  gl::GenTextures(1, &mut fb_tex_d);
+  gl::BindTexture(gl::TEXTURE_2D, fb_tex_d);
   gl::TexImage2D(
     gl::TEXTURE_2D,
     0,
@@ -280,46 +272,36 @@ void main() {
   gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::int);
   gl::FramebufferTexture2D(gl::FRAMEBUFFER,
     gl::DEPTH_ATTACHMENT,
-    gl::TEXTURE_2D, fbo_tex_d, 0);
-/*
-  let mut fbo_rbo = 0;
-  gl::GenRenderbuffers(1, &mut fbo_rbo);
-  gl::BindRenderbuffer(gl::RENDERBUFFER, fbo_rbo);
-  gl::RenderbufferStorage(gl::RENDERBUFFER,
-    gl::DEPTH_COMPONENT32, fb_w as gl::int, fb_h as gl::int);
-  gl::BindRenderbuffer(gl::RENDERBUFFER, 0);
-  gl::FramebufferRenderbuffer(gl::FRAMEBUFFER,
-    gl::DEPTH_ATTACHMENT, gl::RENDERBUFFER, fbo_rbo);
-*/
+    gl::TEXTURE_2D, fb_tex_d, 0);
   // Unbind framebuffer
   gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 
   // Program for rendering to screen
   let fb_prog = program(r"
-#version 330 core
-layout (location = 0) in vec2 v_pos;
-out vec2 f_tex_coord;
+    #version 330 core
+    layout (location = 0) in vec2 v_pos;
+    out vec2 f_tex_coord;
 
-void main() {
-  gl_Position = vec4(v_pos, 0.0, 1.0);
-  f_tex_coord = vec2((1 + v_pos.x) / 2, (1 + v_pos.y) / 2);
-}
-", r"
-#version 330 core
-uniform sampler2D tex;
-uniform sampler2D noise;
-in vec2 f_tex_coord;
-out vec4 out_colour;
+    void main() {
+      gl_Position = vec4(v_pos, 0.0, 1.0);
+      f_tex_coord = vec2((1 + v_pos.x) / 2, (1 + v_pos.y) / 2);
+    }
+  ", r"
+    #version 330 core
+    uniform sampler2D tex;
+    uniform sampler2D noise;
+    in vec2 f_tex_coord;
+    out vec4 out_colour;
 
-void main() {
-  // Frosted glass
-  vec2 offset = (texture(noise, f_tex_coord).rg - vec2(0.5, 0.5)) * 0.03;
-  out_colour = vec4(0);
-  for (int i = 0; i <= 4; i++) {
-    out_colour += texture(tex, f_tex_coord + offset * i / 4) / 5;
-  }
-}
-");
+    void main() {
+      // Frosted glass
+      vec2 offset = (texture(noise, f_tex_coord).rg - vec2(0.5, 0.5)) * 0.03;
+      out_colour = vec4(0);
+      for (int i = 0; i <= 4; i++) {
+        out_colour += texture(tex, f_tex_coord + offset * i / 4) / 5;
+      }
+    }
+  ");
 
   let fb_uni_tex = gl::GetUniformLocation(fb_prog, "tex\0".as_ptr().cast());
   let fb_uni_noise = gl::GetUniformLocation(fb_prog, "noise\0".as_ptr().cast());
@@ -388,10 +370,7 @@ void main() {
   check_gl_errors();
 
   // Data kept between frames
-  let frame_len = 1.0 / 48.0;
   let mut last_time = glfw.get_time() as f32;
-  let mut accum_time = 0.0;
-  let mut frame_num = 0;
 
   let mut cam_pos = glm::vec3(0.0, 1.0, 10.0);
   let cam_up = glm::vec3(0.0, 1.0, 0.0);
@@ -427,15 +406,9 @@ void main() {
     // Update with time
     let cur_time = glfw.get_time() as f32;
     let delta_time = cur_time - last_time;
-    accum_time += delta_time;
     last_time = cur_time;
-    while accum_time >= frame_len {
-      accum_time -= frame_len;
-      frame_num = (frame_num + 1) % frames.len();
-    }
 
     // Frame data
-    let frame = &frames[frame_num];
     gl::BindVertexArray(scene_vao);
     gl::BindBuffer(gl::ARRAY_BUFFER, scene_vbo);
     gl::BufferData(
@@ -558,7 +531,7 @@ void main() {
       gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
       gl::UseProgram(fb_prog);
       gl::ActiveTexture(gl::TEXTURE0);
-      gl::BindTexture(gl::TEXTURE_2D, fbo_tex_c);
+      gl::BindTexture(gl::TEXTURE_2D, fb_tex_c);
       gl::ActiveTexture(gl::TEXTURE1);
       gl::BindTexture(gl::TEXTURE_2D, fb_tex_noise);
       gl::BindVertexArray(fb_vao);

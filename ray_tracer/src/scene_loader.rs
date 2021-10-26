@@ -1,4 +1,3 @@
-use crate::gl;
 use wavefront_obj::obj;
 
 pub struct Frame {
