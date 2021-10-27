@@ -472,22 +472,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     last_filter_key_press = filter_key_press;
 
     // Camera panning
-    let move_dist = delta_time * 10.0;
+    let move_dist = delta_time * 8.0;
+    let cam_land = glm::normalize(cam_ori - glm::ext::projection(cam_ori, cam_up));
     if window.get_key(glfw::Key::W) == glfw::Action::Press
     || window.get_key(glfw::Key::Up) == glfw::Action::Press {
-      cam_pos = cam_pos + cam_ori * move_dist;
+      cam_pos = cam_pos + cam_land * move_dist;
     }
     if window.get_key(glfw::Key::S) == glfw::Action::Press
     || window.get_key(glfw::Key::Down) == glfw::Action::Press {
-      cam_pos = cam_pos - cam_ori * move_dist;
+      cam_pos = cam_pos - cam_land * move_dist;
     }
     if window.get_key(glfw::Key::A) == glfw::Action::Press
     || window.get_key(glfw::Key::Left) == glfw::Action::Press {
-      cam_pos = cam_pos - glm::cross(cam_ori, cam_up) * move_dist;
+      cam_pos = cam_pos - glm::cross(cam_land, cam_up) * move_dist;
     }
     if window.get_key(glfw::Key::D) == glfw::Action::Press
     || window.get_key(glfw::Key::Right) == glfw::Action::Press {
-      cam_pos = cam_pos + glm::cross(cam_ori, cam_up) * move_dist;
+      cam_pos = cam_pos + glm::cross(cam_land, cam_up) * move_dist;
     }
     if window.get_key(glfw::Key::Q) == glfw::Action::Press {
       cam_pos = cam_pos + cam_up * move_dist;
@@ -501,7 +502,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (dx, dy) = (last_cursor.0 - x, last_cursor.1 - y);
     last_cursor = (x, y);
     if dx.abs() >= 0.25 || dy.abs() >= 0.25 {
-      let rotate_speed = 1.0 / 480.0;
+      let rotate_speed = 1.0 / 600.0;
       let cam_right = glm::cross(cam_ori, cam_up);
       // X
       let angle = dx as f32 * rotate_speed;
@@ -510,6 +511,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       cam_ori = cam_ori * cos_a - cam_right * sin_a;
       // Y
       let angle = dy as f32 * rotate_speed;
+      let orig_angle = glm::dot(cam_ori, cam_up).acos();
+      let min_angle = 0.01;
+      let angle = angle
+        .min(-min_angle + orig_angle)
+        .max(-std::f32::consts::PI + min_angle + orig_angle);
       let (cos_a, sin_a) = (angle.cos(), angle.sin());
       // cross(right, ori) = up
       cam_ori = cam_ori * cos_a + cam_up * sin_a;
