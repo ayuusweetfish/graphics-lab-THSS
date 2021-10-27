@@ -85,7 +85,7 @@ impl<'a> RayTracer<'a> {
           - self.cam_pos;
         let ray_ori = glm::normalize(ray_ori);
 
-        let k = ray_colour(self.cam_pos, ray_ori, &self.frame, 1.0);
+        let k = self.ray_colour(self.cam_pos, ray_ori, 1.0);
 
         let i = (y * self.w + x) as usize;
         self.cbuf[i][0] += k[0];
@@ -111,10 +111,41 @@ impl<'a> RayTracer<'a> {
     }
     self.ibuf.as_ptr()
   }
+
+  fn ray_colour(
+    &self,
+    cen: glm::Vec3, dir: glm::Vec3,
+    w: f32,
+  ) -> glm::Vec3 {
+    // println!("{:?} - {:?}", cen, dir);
+    let tri_index = self.collide(cen, dir);
+    if let Some(_) = tri_index {
+      glm::vec3(0.9, 1.0, 0.9)
+    } else {
+      glm::vec3(0.3, 0.3, 0.2)
+    }
+  }
+
+  // Finds the nearest colliding triangle
+  // Returns the index
+  fn collide(&self, cen: glm::Vec3, dir: glm::Vec3) -> Option<usize> {
+    for (i, tri) in self.frame.vertices.chunks_exact(3).enumerate() {
+      if let Some(p) = ray_tri_intersect(
+        cen, dir,
+        tuple_vec3(tri[0].pos),
+        tuple_vec3(tri[1].pos),
+        tuple_vec3(tri[2].pos),
+      ) {
+        return Some(i);
+      }
+    }
+    None
+  }
 }
 
 fn tuple_vec3(p: (f32, f32, f32)) -> glm::Vec3 { glm::vec3(p.0, p.1, p.2) }
 
+// Möller–Trumbore
 fn ray_tri_intersect(
   cen: glm::Vec3, dir: glm::Vec3,
   p0: glm::Vec3, p1: glm::Vec3, p2: glm::Vec3,
@@ -138,28 +169,4 @@ fn ray_tri_intersect(
   } else {
     None
   }
-}
-
-fn ray_colour(
-  cen: glm::Vec3, dir: glm::Vec3,
-  frame: &scene_loader::Frame,
-  w: f32,
-) -> glm::Vec3 {
-  // println!("{:?} - {:?}", cen, dir);
-  for tri in frame.vertices.chunks_exact(3) {
-    assert!(tri.len() == 3);
-    /*println!("====");
-    println!("{:?}", tri[0].pos);
-    println!("{:?}", tri[1].pos);
-    println!("{:?}", tri[2].pos);*/
-    if let Some(p) = ray_tri_intersect(
-      cen, dir,
-      tuple_vec3(tri[0].pos),
-      tuple_vec3(tri[1].pos),
-      tuple_vec3(tri[2].pos),
-    ) {
-      return glm::vec3(0.9, 1.0, 0.9);
-    }
-  }
-  glm::vec3(0.3, 0.3, 0.2)
 }
