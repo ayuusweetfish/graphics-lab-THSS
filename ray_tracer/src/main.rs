@@ -180,8 +180,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     out vec4 out_colour;
 
     void main() {
-      vec3 ambient_colour = vec3(0.2);
-      vec3 light_colour = vec3(0.8);
+      vec3 ambient_colour = vec3(0.1);
+      vec3 light_colour = vec3(0.6);
 
       vec3 n = normalize(f_normal);
 
@@ -196,7 +196,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       if (f_texid < 16)
         out_colour *= texture(textures[int(f_texid + 0.5)], f_texcoord);
       else
-        out_colour *= vec4(0.7, 0.9, 0.6, 1);
+        out_colour *= vec4(0.6, 0.9, 0.5, 1);
+
+      out_colour.rgb = pow(out_colour.rgb, vec3(1 / 2.2));
     }
   ");
 
@@ -260,7 +262,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     gl::TexImage2D(
       gl::TEXTURE_2D,
       0,
-      gl::RGB as gl::int,
+      gl::SRGB as gl::int,
       w as gl::int, h as gl::int, 0,
       gl::RGB,
       gl::UNSIGNED_BYTE,
