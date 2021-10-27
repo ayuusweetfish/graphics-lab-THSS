@@ -4,10 +4,10 @@ use image::GenericImageView;
 
 #[repr(C)]
 pub struct Vertex {
-  pos: (f32, f32, f32),
-  norm: (f32, f32, f32),
-  texc: (f32, f32),
-  texid: u8,  // 255 denotes no texture
+  pub pos: (f32, f32, f32),
+  pub norm: (f32, f32, f32),
+  pub texc: (f32, f32),
+  pub texid: u8,  // 255 denotes no texture
 }
 
 pub struct Frame {

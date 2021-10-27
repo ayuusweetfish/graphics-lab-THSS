@@ -223,7 +223,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   gl::BindBuffer(gl::ARRAY_BUFFER, scene_vbo);
 
   // Load scene
-  let frame = scene_loader::load("trees2/trees2.obj")?;
+  // let frame = scene_loader::load("trees2/trees2.obj")?;
+  let frame = scene_loader::load("test1.obj")?;
 
   gl::EnableVertexAttribArray(0);
   gl::VertexAttribPointer(
@@ -413,6 +414,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     gl::STATIC_DRAW,
   );
 
+  // Extra program for plain rendering
+  let fb_plain_prog = program(r"
+    #version 330 core
+    layout (location = 0) in vec2 v_pos;
+    out vec2 f_tex_coord;
+
+    void main() {
+      gl_Position = vec4(v_pos, 0.0, 1.0);
+      f_tex_coord = vec2((1 + v_pos.x) / 2, (1 + v_pos.y) / 2);
+    }
+  ", r"
+    #version 330 core
+    uniform sampler2D tex;
+    in vec2 f_tex_coord;
+    out vec4 out_colour;
+
+    void main() {
+      out_colour = texture(tex, f_tex_coord);
+    }
+  ");
+
+  let fb_uni_tex = gl::GetUniformLocation(fb_prog, "tex\0".as_ptr().cast());
+  gl::UseProgram(fb_plain_prog);
+  gl::Uniform1i(fb_uni_tex, 0);
+
   check_gl_errors();
 
   // Data kept between frames
@@ -433,7 +459,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   let mut last_raytrace_key_press = false;
 
   // let mut rt = ray_tracer::RayTracer::new(fb_w as u32, fb_h as u32, &frame);
-  let mut rt = ray_tracer::RayTracer::new(fb_w as u32 / 4, fb_h as u32 / 4, &frame);
+  let debug_scale = 1i32;
+  let mut rt = ray_tracer::RayTracer::new(fb_w as u32 / debug_scale as u32, fb_h as u32 / debug_scale as u32, &frame);
 
   // Hide cursor
   window.set_cursor_mode(glfw::CursorMode::Disabled);
@@ -477,7 +504,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !last_raytrace_key_press && raytrace_key_press {
       raytrace_on = !raytrace_on;
       if raytrace_on {
-        rt.reset();
+        rt.reset(cam_pos, cam_ori, cam_up, 0.5236, 10.0);
       }
     }
     last_raytrace_key_press = raytrace_key_press;
@@ -494,13 +521,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         0,
         gl::RGB as gl::int,
         // fb_w as gl::int, fb_h as gl::int, 0,
-        fb_w as gl::int / 4, fb_h as gl::int / 4, 0,
+        fb_w as gl::int / debug_scale, fb_h as gl::int / debug_scale, 0,
         gl::RGB,
         gl::UNSIGNED_BYTE,
         rt.image() as *const _
       );
 
-      gl::UseProgram(fb_prog);
+      gl::UseProgram(fb_plain_prog);
       gl::BindVertexArray(fb_vao);
       gl::BindBuffer(gl::ARRAY_BUFFER, fb_vbo);
       gl::DepthMask(gl::FALSE);
