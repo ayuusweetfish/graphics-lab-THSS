@@ -1,5 +1,6 @@
 mod gl;
 mod scene_loader;
+mod ray_tracer;
 
 use glfw::Context;
 use image::GenericImageView;
@@ -255,7 +256,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
   // Load textures
   let mut scene_texs = vec![];
-  for (i, (w, h, buf)) in frame.textures.into_iter().enumerate() {
+  for (i, (w, h, buf)) in frame.textures.iter().enumerate() {
     let mut mat_tex = 0;
     gl::GenTextures(1, &mut mat_tex);
     gl::BindTexture(gl::TEXTURE_2D, mat_tex);
@@ -263,7 +264,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       gl::TEXTURE_2D,
       0,
       gl::SRGB as gl::int,
-      w as gl::int, h as gl::int, 0,
+      *w as gl::int, *h as gl::int, 0,
       gl::RGB,
       gl::UNSIGNED_BYTE,
       buf.as_ptr().cast()
@@ -428,8 +429,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     100.0,
   );
 
-  let mut filter_on = false;
-  let mut last_filter_key_press = false;
+  let mut raytrace_on = false;
+  let mut last_raytrace_key_press = false;
+
+  // let mut rt = ray_tracer::RayTracer::new(fb_w as u32, fb_h as u32, &frame);
+  let mut rt = ray_tracer::RayTracer::new(fb_w as u32 / 4, fb_h as u32 / 4, &frame);
 
   // Hide cursor
   window.set_cursor_mode(glfw::CursorMode::Disabled);
@@ -463,141 +467,175 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       gl::STREAM_DRAW,
     );
 
+    // Filter on?
+    let filter_on =
+      window.get_key(glfw::Key::LeftShift) == glfw::Action::Press;
+
     // Toggled filter?
-    let filter_key_press =
+    let raytrace_key_press =
       window.get_key(glfw::Key::Space) == glfw::Action::Press;
-    if !last_filter_key_press && filter_key_press {
-      filter_on = !filter_on;
+    if !last_raytrace_key_press && raytrace_key_press {
+      raytrace_on = !raytrace_on;
+      if raytrace_on {
+        rt.reset();
+      }
     }
-    last_filter_key_press = filter_key_press;
+    last_raytrace_key_press = raytrace_key_press;
 
-    // Camera panning
-    let move_dist = delta_time * 8.0;
-    let cam_land = glm::normalize(cam_ori - glm::ext::projection(cam_ori, cam_up));
-    if window.get_key(glfw::Key::W) == glfw::Action::Press
-    || window.get_key(glfw::Key::Up) == glfw::Action::Press {
-      cam_pos = cam_pos + cam_land * move_dist;
-    }
-    if window.get_key(glfw::Key::S) == glfw::Action::Press
-    || window.get_key(glfw::Key::Down) == glfw::Action::Press {
-      cam_pos = cam_pos - cam_land * move_dist;
-    }
-    if window.get_key(glfw::Key::A) == glfw::Action::Press
-    || window.get_key(glfw::Key::Left) == glfw::Action::Press {
-      cam_pos = cam_pos - glm::cross(cam_land, cam_up) * move_dist;
-    }
-    if window.get_key(glfw::Key::D) == glfw::Action::Press
-    || window.get_key(glfw::Key::Right) == glfw::Action::Press {
-      cam_pos = cam_pos + glm::cross(cam_land, cam_up) * move_dist;
-    }
-    if window.get_key(glfw::Key::Q) == glfw::Action::Press {
-      cam_pos = cam_pos + cam_up * move_dist;
-    }
-    if window.get_key(glfw::Key::Z) == glfw::Action::Press {
-      cam_pos = cam_pos - cam_up * move_dist;
-    }
+    if raytrace_on {
+      // Render with the ray tracer
+      rt.render();
 
-    // Camera rotation
-    let (x, y) = window.get_cursor_pos();
-    let (dx, dy) = (last_cursor.0 - x, last_cursor.1 - y);
-    last_cursor = (x, y);
-    if dx.abs() >= 0.25 || dy.abs() >= 0.25 {
-      let rotate_speed = 1.0 / 600.0;
-      let cam_right = glm::cross(cam_ori, cam_up);
-      // X
-      let angle = dx as f32 * rotate_speed;
-      let (cos_a, sin_a) = (angle.cos(), angle.sin());
-      // cross(up, ori) = -right
-      cam_ori = cam_ori * cos_a - cam_right * sin_a;
-      // Y
-      let angle = dy as f32 * rotate_speed;
-      let orig_angle = glm::dot(cam_ori, cam_up).acos();
-      let min_angle = 0.01;
-      let angle = angle
-        .min(-min_angle + orig_angle)
-        .max(-std::f32::consts::PI + min_angle + orig_angle);
-      let (cos_a, sin_a) = (angle.cos(), angle.sin());
-      // cross(right, ori) = up
-      cam_ori = cam_ori * cos_a + cam_up * sin_a;
-      // In case drift happens
-      cam_ori = glm::normalize(cam_ori);
-    }
-
-    // Camera matrix
-    let v = glm::ext::look_at(cam_pos, cam_pos + cam_ori, cam_up);
-    let vp = p_mat * v;
-    let mut vnopan = v.clone();
-    vnopan.c0.w = 0.0;
-    vnopan.c1.w = 0.0;
-    vnopan.c2.w = 0.0;
-    vnopan.c3 = glm::vec4(0.0, 0.0, 0.0, 1.0);
-    let vnopan_p = p_mat * vnopan;
-
-    // Light
-    let light_pos = glm::vec3(4.0, 1.0, 6.0);
-
-    // Draw to framebuffer if filter is on
-    if filter_on {
-      gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
-    } else {
-      gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
-    }
-
-    // Draw
-    // https://www.reddit.com/r/opengl/comments/1pxzzt/comment/cd79lxt/?utm_source=share&utm_medium=web2x&context=3
-    gl::DepthMask(gl::TRUE);
-    gl::ClearColor(1.0, 0.99, 0.99, 1.0);
-    gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-
-    // Skybox
-    gl::UseProgram(skybox_prog);
-    // Uniforms and textures
-    gl::UniformMatrix4fv(skybox_uni_vp, 1, gl::FALSE, vnopan_p.as_array().as_ptr().cast());
-    gl::ActiveTexture(gl::TEXTURE0);
-    gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_tex);
-    // Draw
-    gl::BindVertexArray(skybox_vao);
-    gl::BindBuffer(gl::ARRAY_BUFFER, skybox_vbo);
-    gl::DepthMask(gl::FALSE);
-    gl::Disable(gl::CULL_FACE);
-    gl::Disable(gl::DEPTH_TEST);
-    gl::DrawArrays(gl::TRIANGLES, 0, 36);
-
-    // Scene
-    gl::UseProgram(scene_prog);
-    // Textures
-    for (i, mat_tex) in scene_texs.iter().enumerate() {
-      gl::ActiveTexture(gl::TEXTURE0 + (i as u32));
-      gl::BindTexture(gl::TEXTURE_2D, *mat_tex);
-    }
-    // Uniforms
-    gl::UniformMatrix4fv(scene_uni_vp, 1, gl::FALSE, vp.as_array().as_ptr().cast());
-    gl::Uniform3f(scene_uni_cam_pos, cam_pos.x, cam_pos.y, cam_pos.z);
-    gl::Uniform3f(scene_uni_light_pos, light_pos.x, light_pos.y, light_pos.z);
-    // Draw
-    gl::BindVertexArray(scene_vao);
-    gl::BindBuffer(gl::ARRAY_BUFFER, scene_vbo);
-    gl::DepthMask(gl::TRUE);
-    gl::Enable(gl::CULL_FACE);
-    gl::Enable(gl::DEPTH_TEST);
-    gl::DepthFunc(gl::LESS);
-    gl::DrawArrays(gl::TRIANGLES, 0, frame.vertices.len() as gl::int);
-
-    if filter_on {
-      gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
-      gl::UseProgram(fb_prog);
+      // Upload to texture
       gl::ActiveTexture(gl::TEXTURE0);
       gl::BindTexture(gl::TEXTURE_2D, fb_tex_c);
-      gl::ActiveTexture(gl::TEXTURE1);
-      gl::BindTexture(gl::TEXTURE_2D, fb_tex_noise);
+      gl::TexImage2D(
+        gl::TEXTURE_2D,
+        0,
+        gl::RGB as gl::int,
+        // fb_w as gl::int, fb_h as gl::int, 0,
+        fb_w as gl::int / 4, fb_h as gl::int / 4, 0,
+        gl::RGB,
+        gl::UNSIGNED_BYTE,
+        rt.image() as *const _
+      );
+
+      gl::UseProgram(fb_prog);
       gl::BindVertexArray(fb_vao);
       gl::BindBuffer(gl::ARRAY_BUFFER, fb_vbo);
       gl::DepthMask(gl::FALSE);
       gl::Disable(gl::CULL_FACE);
       gl::Disable(gl::DEPTH_TEST);
       gl::DrawArrays(gl::TRIANGLES, 0, 6);
+    } else {
+      // Camera panning
+      let move_dist = delta_time * 8.0;
+      let cam_land = glm::normalize(cam_ori - glm::ext::projection(cam_ori, cam_up));
+      if window.get_key(glfw::Key::W) == glfw::Action::Press
+      || window.get_key(glfw::Key::Up) == glfw::Action::Press {
+        cam_pos = cam_pos + cam_land * move_dist;
+      }
+      if window.get_key(glfw::Key::S) == glfw::Action::Press
+      || window.get_key(glfw::Key::Down) == glfw::Action::Press {
+        cam_pos = cam_pos - cam_land * move_dist;
+      }
+      if window.get_key(glfw::Key::A) == glfw::Action::Press
+      || window.get_key(glfw::Key::Left) == glfw::Action::Press {
+        cam_pos = cam_pos - glm::cross(cam_land, cam_up) * move_dist;
+      }
+      if window.get_key(glfw::Key::D) == glfw::Action::Press
+      || window.get_key(glfw::Key::Right) == glfw::Action::Press {
+        cam_pos = cam_pos + glm::cross(cam_land, cam_up) * move_dist;
+      }
+      if window.get_key(glfw::Key::Q) == glfw::Action::Press {
+        cam_pos = cam_pos + cam_up * move_dist;
+      }
+      if window.get_key(glfw::Key::Z) == glfw::Action::Press {
+        cam_pos = cam_pos - cam_up * move_dist;
+      }
+
+      // Camera rotation
+      let (x, y) = window.get_cursor_pos();
+      let (dx, dy) = (last_cursor.0 - x, last_cursor.1 - y);
+      if dx.abs() >= 0.25 || dy.abs() >= 0.25 {
+        let rotate_speed = 1.0 / 600.0;
+        let cam_right = glm::cross(cam_ori, cam_up);
+        // X
+        let angle = dx as f32 * rotate_speed;
+        let (cos_a, sin_a) = (angle.cos(), angle.sin());
+        // cross(up, ori) = -right
+        cam_ori = cam_ori * cos_a - cam_right * sin_a;
+        // Y
+        let angle = dy as f32 * rotate_speed;
+        let orig_angle = glm::dot(cam_ori, cam_up).acos();
+        let min_angle = 0.01;
+        let angle = angle
+          .min(-min_angle + orig_angle)
+          .max(-std::f32::consts::PI + min_angle + orig_angle);
+        let (cos_a, sin_a) = (angle.cos(), angle.sin());
+        // cross(right, ori) = up
+        cam_ori = cam_ori * cos_a + cam_up * sin_a;
+        // In case drift happens
+        cam_ori = glm::normalize(cam_ori);
+      }
+
+      // Camera matrix
+      let v = glm::ext::look_at(cam_pos, cam_pos + cam_ori, cam_up);
+      let vp = p_mat * v;
+      let mut vnopan = v.clone();
+      vnopan.c0.w = 0.0;
+      vnopan.c1.w = 0.0;
+      vnopan.c2.w = 0.0;
+      vnopan.c3 = glm::vec4(0.0, 0.0, 0.0, 1.0);
+      let vnopan_p = p_mat * vnopan;
+
+      // Light
+      let light_pos = glm::vec3(4.0, 1.0, 6.0);
+
+      // Draw to framebuffer if filter is on
+      if filter_on {
+        gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
+      } else {
+        gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+      }
+
+      // Draw
+      // https://www.reddit.com/r/opengl/comments/1pxzzt/comment/cd79lxt/?utm_source=share&utm_medium=web2x&context=3
+      gl::DepthMask(gl::TRUE);
+      gl::ClearColor(1.0, 0.99, 0.99, 1.0);
+      gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+
+      // Skybox
+      gl::UseProgram(skybox_prog);
+      // Uniforms and textures
+      gl::UniformMatrix4fv(skybox_uni_vp, 1, gl::FALSE, vnopan_p.as_array().as_ptr().cast());
+      gl::ActiveTexture(gl::TEXTURE0);
+      gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_tex);
+      // Draw
+      gl::BindVertexArray(skybox_vao);
+      gl::BindBuffer(gl::ARRAY_BUFFER, skybox_vbo);
+      gl::DepthMask(gl::FALSE);
+      gl::Disable(gl::CULL_FACE);
+      gl::Disable(gl::DEPTH_TEST);
+      gl::DrawArrays(gl::TRIANGLES, 0, 36);
+
+      // Scene
+      gl::UseProgram(scene_prog);
+      // Textures
+      for (i, mat_tex) in scene_texs.iter().enumerate() {
+        gl::ActiveTexture(gl::TEXTURE0 + (i as u32));
+        gl::BindTexture(gl::TEXTURE_2D, *mat_tex);
+      }
+      // Uniforms
+      gl::UniformMatrix4fv(scene_uni_vp, 1, gl::FALSE, vp.as_array().as_ptr().cast());
+      gl::Uniform3f(scene_uni_cam_pos, cam_pos.x, cam_pos.y, cam_pos.z);
+      gl::Uniform3f(scene_uni_light_pos, light_pos.x, light_pos.y, light_pos.z);
+      // Draw
+      gl::BindVertexArray(scene_vao);
+      gl::BindBuffer(gl::ARRAY_BUFFER, scene_vbo);
+      gl::DepthMask(gl::TRUE);
+      gl::Enable(gl::CULL_FACE);
+      gl::Enable(gl::DEPTH_TEST);
+      gl::DepthFunc(gl::LESS);
+      gl::DrawArrays(gl::TRIANGLES, 0, frame.vertices.len() as gl::int);
+
+      if filter_on {
+        gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+        gl::UseProgram(fb_prog);
+        gl::ActiveTexture(gl::TEXTURE0);
+        gl::BindTexture(gl::TEXTURE_2D, fb_tex_c);
+        gl::ActiveTexture(gl::TEXTURE1);
+        gl::BindTexture(gl::TEXTURE_2D, fb_tex_noise);
+        gl::BindVertexArray(fb_vao);
+        gl::BindBuffer(gl::ARRAY_BUFFER, fb_vbo);
+        gl::DepthMask(gl::FALSE);
+        gl::Disable(gl::CULL_FACE);
+        gl::Disable(gl::DEPTH_TEST);
+        gl::DrawArrays(gl::TRIANGLES, 0, 6);
+      }
     }
 
+    last_cursor = window.get_cursor_pos();
     check_gl_errors();
   }
 
