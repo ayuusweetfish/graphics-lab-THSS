@@ -14,10 +14,57 @@ pub struct RayTracer<'a> {
   cam_horz_span: glm::Vec3,
   cam_vert_span: glm::Vec3,
 
+  tris: Vec<TriangleIndex>,
+  bvh: bvh::bvh::BVH,
+
   cbuf: Vec<[f32; 3]>,
   sample_count: u32,
 
   ibuf: Vec<u8>,
+}
+
+struct TriangleIndex {
+  index: usize,
+  aabb: bvh::aabb::AABB,
+  node_index: usize,
+}
+
+fn minmax(a: f32, b: f32, c: f32) -> (f32, f32) {
+  let (mut min, mut max) = (a, a);
+  if b < min { min = b; } else if b > max { max = b; }
+  if c < min { min = c; } else if c > max { max = c; }
+  (min, max)
+}
+
+impl TriangleIndex {
+  fn new(frame: &scene_loader::Frame, index: usize) -> Self {
+    let (min_x, max_x) = minmax(
+      frame.vertices[index * 3].pos.0,
+      frame.vertices[index * 3 + 1].pos.0,
+      frame.vertices[index * 3 + 2].pos.0);
+    let (min_y, max_y) = minmax(
+      frame.vertices[index * 3].pos.1,
+      frame.vertices[index * 3 + 1].pos.1,
+      frame.vertices[index * 3 + 2].pos.1);
+    let (min_z, max_z) = minmax(
+      frame.vertices[index * 3].pos.2,
+      frame.vertices[index * 3 + 1].pos.2,
+      frame.vertices[index * 3 + 2].pos.2);
+    let aabb = bvh::aabb::AABB::with_bounds(
+      (min_x, min_y, min_z).into(),
+      (max_x, max_y, max_z).into(),
+    );
+    Self { aabb, index, node_index: 0 }
+  }
+}
+
+impl bvh::aabb::Bounded for TriangleIndex {
+  fn aabb(&self) -> bvh::aabb::AABB { self.aabb }
+}
+
+impl bvh::bounding_hierarchy::BHShape for TriangleIndex {
+  fn set_bh_node_index(&mut self, index: usize) { self.node_index = index; }
+  fn bh_node_index(&self) -> usize { self.node_index }
 }
 
 impl<'a> RayTracer<'a> {
@@ -26,6 +73,10 @@ impl<'a> RayTracer<'a> {
     h: u32,
     frame: &'a scene_loader::Frame,
   ) -> Self {
+    let mut tris = (0..frame.vertices.len() / 3)
+      .map(|i| TriangleIndex::new(frame, i)).collect::<Vec<_>>();
+    let bvh = bvh::bvh::BVH::build(&mut tris);
+
     Self {
       w, h, frame,
 
@@ -37,6 +88,9 @@ impl<'a> RayTracer<'a> {
       cam_corner: glm::vec3(0.0, 0.0, 0.0),
       cam_horz_span: glm::vec3(0.0, 0.0, 0.0),
       cam_vert_span: glm::vec3(0.0, 0.0, 0.0),
+
+      tris,
+      bvh,
 
       cbuf: vec![[0.0; 3]; (w * h) as usize],
       sample_count: 0,
@@ -129,14 +183,17 @@ impl<'a> RayTracer<'a> {
   // Finds the nearest colliding triangle
   // Returns the index
   fn collide(&self, cen: glm::Vec3, dir: glm::Vec3) -> Option<usize> {
-    for (i, tri) in self.frame.vertices.chunks_exact(3).enumerate() {
+    let ray = bvh::ray::Ray::new(
+      (cen[0], cen[1], cen[2]).into(),
+      (dir[0], dir[1], dir[2]).into());
+    for tri in self.bvh.traverse_iterator(&ray, &self.tris) {
       if let Some(p) = ray_tri_intersect(
         cen, dir,
-        tuple_vec3(tri[0].pos),
-        tuple_vec3(tri[1].pos),
-        tuple_vec3(tri[2].pos),
+        tuple_vec3(self.frame.vertices[tri.index * 3 + 0].pos),
+        tuple_vec3(self.frame.vertices[tri.index * 3 + 1].pos),
+        tuple_vec3(self.frame.vertices[tri.index * 3 + 2].pos),
       ) {
-        return Some(i);
+        return Some(tri.index);
       }
     }
     None
