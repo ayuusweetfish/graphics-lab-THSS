@@ -414,8 +414,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     gl::STATIC_DRAW,
   );
 
-  // Extra program for plain rendering
-  let fb_plain_prog = program(r"
+  // Extra texture and program for plain rendering
+  let mut plain_tex = 0;
+  gl::GenTextures(1, &mut plain_tex);
+  gl::BindTexture(gl::TEXTURE_2D, plain_tex);
+  gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as gl::int);
+  gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::int);
+
+  let plain_prog = program(r"
     #version 330 core
     layout (location = 0) in vec2 v_pos;
     out vec2 f_tex_coord;
@@ -435,9 +441,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
   ");
 
-  let fb_uni_tex = gl::GetUniformLocation(fb_prog, "tex\0".as_ptr().cast());
-  gl::UseProgram(fb_plain_prog);
-  gl::Uniform1i(fb_uni_tex, 0);
+  let plain_uni_tex = gl::GetUniformLocation(fb_prog, "tex\0".as_ptr().cast());
+  gl::UseProgram(plain_prog);
+  gl::Uniform1i(plain_uni_tex, 0);
 
   check_gl_errors();
 
@@ -461,6 +467,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   // let mut rt = ray_tracer::RayTracer::new(fb_w as u32, fb_h as u32, &frame);
   let debug_scale = 2i32;
   let mut rt = ray_tracer::RayTracer::new(fb_w as u32 / debug_scale as u32, fb_h as u32 / debug_scale as u32, &frame);
+  gl::BindTexture(gl::TEXTURE_2D, plain_tex);
+  gl::TexImage2D(
+    gl::TEXTURE_2D,
+    0,
+    gl::RGBA as gl::int,
+    fb_w as gl::int / debug_scale, fb_h as gl::int / debug_scale, 0,
+    gl::RGBA,
+    gl::UNSIGNED_BYTE,
+    rt.image() as *const _
+  );
 
   // Hide cursor
   window.set_cursor_mode(glfw::CursorMode::Disabled);
@@ -510,33 +526,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     last_raytrace_key_press = raytrace_key_press;
 
-    if raytrace_on {
-      // Render with the ray tracer
-      rt.render();
-
-      // Upload to texture
-      gl::ActiveTexture(gl::TEXTURE0);
-      gl::BindTexture(gl::TEXTURE_2D, fb_tex_c);
-      gl::TexImage2D(
-        gl::TEXTURE_2D,
-        0,
-        gl::RGB as gl::int,
-        // fb_w as gl::int, fb_h as gl::int, 0,
-        fb_w as gl::int / debug_scale, fb_h as gl::int / debug_scale, 0,
-        gl::RGB,
-        gl::UNSIGNED_BYTE,
-        rt.image() as *const _
-      );
-
-      gl::UseProgram(fb_plain_prog);
-      gl::BindVertexArray(fb_vao);
-      gl::BindBuffer(gl::ARRAY_BUFFER, fb_vbo);
-      gl::DepthMask(gl::FALSE);
-      gl::Disable(gl::CULL_FACE);
-      gl::Disable(gl::DEPTH_TEST);
-      gl::DrawArrays(gl::TRIANGLES, 0, 6);
-    } else {
-      // Camera panning
+    // Camera navigation
+    if !raytrace_on {
+      // Panning
       let move_dist = delta_time * 8.0;
       let cam_land = glm::normalize(cam_ori - glm::ext::projection(cam_ori, cam_up));
       if window.get_key(glfw::Key::W) == glfw::Action::Press
@@ -562,7 +554,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cam_pos = cam_pos - cam_up * move_dist;
       }
 
-      // Camera rotation
+      // Rotation
       let (x, y) = window.get_cursor_pos();
       let (dx, dy) = (last_cursor.0 - x, last_cursor.1 - y);
       if dx.abs() >= 0.25 || dy.abs() >= 0.25 {
@@ -586,7 +578,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // In case drift happens
         cam_ori = glm::normalize(cam_ori);
       }
+    }
 
+    if !raytrace_on || !rt.frame_filled() {
       // Camera matrix
       let v = glm::ext::look_at(cam_pos, cam_pos + cam_ori, cam_up);
       let vp = p_mat * v;
@@ -612,6 +606,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       gl::DepthMask(gl::TRUE);
       gl::ClearColor(1.0, 0.99, 0.99, 1.0);
       gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+
+      gl::Disable(gl::BLEND);
 
       // Skybox
       gl::UseProgram(skybox_prog);
@@ -661,6 +657,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         gl::Disable(gl::DEPTH_TEST);
         gl::DrawArrays(gl::TRIANGLES, 0, 6);
       }
+    }
+
+    if raytrace_on {
+      // Render with the ray tracer
+      rt.render();
+
+      // Upload to texture
+      gl::ActiveTexture(gl::TEXTURE0);
+      gl::BindTexture(gl::TEXTURE_2D, plain_tex);
+      gl::TexSubImage2D(
+        gl::TEXTURE_2D,
+        0,
+        0, 0,
+        fb_w as gl::int / debug_scale, fb_h as gl::int / debug_scale,
+        gl::RGBA,
+        gl::UNSIGNED_BYTE,
+        rt.image() as *const _
+      );
+
+      if !rt.frame_filled() {
+        gl::Enable(gl::BLEND);
+        gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+      }
+
+      gl::UseProgram(plain_prog);
+      gl::BindVertexArray(fb_vao);
+      gl::BindBuffer(gl::ARRAY_BUFFER, fb_vbo);
+      gl::DepthMask(gl::FALSE);
+      gl::Disable(gl::CULL_FACE);
+      gl::Disable(gl::DEPTH_TEST);
+      gl::DrawArrays(gl::TRIANGLES, 0, 6);
     }
 
     last_cursor = window.get_cursor_pos();
