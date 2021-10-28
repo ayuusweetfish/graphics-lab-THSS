@@ -159,10 +159,7 @@ impl<'a> RayTracer<'a> {
           - self.cam_pos;
         let ray_ori = glm::normalize(ray_ori);
 
-        //if y == self.h / 2 - 1 && (x as i32 - self.w as i32 / 2).abs() <= 6 {
-        /*if y == 39 && x == 224 {
-          self.debug = true;
-        }*/
+        self.debug = x == self.w / 2 && y == self.h / 2;
         let k = self.ray_colour(self.cam_pos, ray_ori, 1.0);
 
         let i = (y * self.w + x) as usize;
@@ -202,10 +199,6 @@ impl<'a> RayTracer<'a> {
             (self.cbuf[i][ch].powf(1.0/2.2) * 255.99) as u8;
         }
         self.ibuf[i * 4 + 3] = 255;
-        /*if self.ibuf[i * 4] <= 20 {
-          self.ibuf[i * 4] = 255;
-          println!("{} {}", y, x);
-        }*/
       }
     }
     if self.sample_count == 0 {
@@ -229,13 +222,42 @@ impl<'a> RayTracer<'a> {
       return glm::vec3(0.0, 0.0, 0.0);
     }
     if self.debug {
-      println!("{:?} - {:?}", cen.as_array(), dir.as_array());
+      println!("{:?} - {:?}", cen.as_array(), glm::normalize(dir).as_array());
     }
     if let Some((tri_idx, intxn)) = self.collide(cen, dir) {
-      let norm = tuple_vec3(self.frame.vertices[tri_idx * 3].norm);
+      let v = &self.frame.vertices[tri_idx * 3];
+      let norm = tuple_vec3(v.norm);
+      let side_in = glm::dot(dir, norm) < 0.0;
       // The normal may need to be flipped
-      let norm = if glm::dot(dir, norm) < 0.0 { norm } else { -norm };
-      let refl = lambertian(norm);
+      let norm = if side_in { norm } else { -norm };
+      // Reflect or refract?
+      let refr_index = v.refr;
+      let refr_index = if side_in { 1.0 / refr_index } else { refr_index };
+      let refract = if refr_index != 0.0 {
+        let cos_theta = glm::dot(-dir, norm).min(1.0);
+        let sin_theta = (1.0 - cos_theta * cos_theta).sqrt();
+        let no_refr = refr_index * sin_theta > 1.0;
+        if self.debug {
+          println!("incident angle: {}\nrefr index: {}", sin_theta, refr_index);
+        }
+        !no_refr && reflectance(cos_theta, refr_index) <= rand::random::<f32>()
+      } else {
+        false
+      };
+      // Scattered direction
+      let refl = if refract {
+        // Refrcation
+        glm::refract(
+          glm::normalize(dir),
+          glm::normalize(norm),
+          refr_index)
+      } else if self.frame.vertices[tri_idx * 3].mirror {
+        // Specular reflection
+        glm::reflect(dir, norm)
+      } else {
+        // Lambertian refection
+        lambertian(norm)
+      };
       if self.debug {
         println!("  tri = \n    {:?}\n    {:?}\n    {:?}\n  intxn = {:?}",
           self.frame.vertices[tri_idx * 3].pos,
@@ -243,11 +265,12 @@ impl<'a> RayTracer<'a> {
           self.frame.vertices[tri_idx * 3 + 2].pos,
           intxn);
       }
+      let mut rate = 0.5;
       let albedo =
         if self.frame.vertices[tri_idx * 3].texid != 255 {
           // glm::vec3(0.8, 0.5, 0.4)
           tex_sample(
-            &self.frame.textures[self.frame.vertices[tri_idx * 3].texid as usize],
+            &self.frame.textures[v.texid as usize],
             tuple_vec3(self.frame.vertices[tri_idx * 3 + 0].pos),
             tuple_vec3(self.frame.vertices[tri_idx * 3 + 1].pos),
             tuple_vec3(self.frame.vertices[tri_idx * 3 + 2].pos),
@@ -256,11 +279,23 @@ impl<'a> RayTracer<'a> {
             tuple_vec2(self.frame.vertices[tri_idx * 3 + 2].texc),
             intxn)
         } else {
-          glm::vec3(1.0, 1.0, 1.0)
+          if v.texc == (0.0, 0.0) {
+            // Mirror
+            if v.mirror { rate = 0.8; }
+            // White stuff
+            glm::vec3(1.0, 1.0, 1.0)
+          } else if v.texc.0 < 0.0 {
+            // Glass
+            rate = 0.9;
+            glm::vec3(v.texc.1, 1.0 - (1.0 - v.texc.1) / 2.0, 1.0)
+          } else {
+            // Coloured
+            glm::vec3(v.texc.0, v.texc.1, (v.texc.0 + v.texc.1) * 0.3)
+          }
         };
-      albedo * self.ray_colour(intxn, refl, w * 0.5)
+      albedo * self.ray_colour(intxn, refl, w * rate)
     } else {
-      glm::vec3(1.0, 1.0, 1.0) * w
+      glm::vec3(0.6, 0.6, 0.6) * w
     }
   }
 
@@ -360,4 +395,10 @@ fn tex_sample(
     buf[(y * tex.0 + x) as usize * 3 + 2] as f32,
   ) / 255.0;
   k
+}
+
+// Schlick's approximation
+fn reflectance(cosine: f32, refr_index: f32) -> f32 {
+  let r0 = ((1.0 - refr_index) / (1.0 + refr_index)).powi(2);
+  r0 + (1.0 - r0) * (1.0 - cosine).powi(5)
 }

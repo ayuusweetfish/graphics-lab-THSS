@@ -8,6 +8,9 @@ pub struct Vertex {
   pub norm: (f32, f32, f32),
   pub texc: (f32, f32),
   pub texid: u8,  // 255 denotes no texture
+
+  pub mirror: bool,
+  pub refr: f32,
 }
 
 pub struct Frame {
@@ -75,12 +78,31 @@ pub fn load<P: AsRef<std::path::Path>>(p: P)
             let v = object.vertices[vi];
             let t = object.tex_vertices[ti];
             let n = object.normals[ni];
-            vertices.push(Vertex {
+            let mut v = Vertex {
               pos:  (v.x as f32, v.y as f32, v.z as f32),
               norm: (n.x as f32, n.y as f32, n.z as f32),
               texc: (t.u as f32, 1.0 - t.v as f32),
               texid: texid as u8,
-            });
+              mirror: object.name.contains("Mirror"),
+              refr: if object.name.contains("Glass") { 1.4 } else { 0.0 },
+            };
+            if texid == 255 {
+              // Assign colours to models
+              if object.name.contains("Crown_Cone") {
+                v.texc = (0.4, 0.7);
+              } else if object.name.contains("Crown_Sphere") {
+                v.texc = (0.4, 0.85);
+              } else if object.name.contains("Trunk") {
+                v.texc = (0.5, 0.35);
+              } else if object.name.contains("Glass") {
+                v.texc = (-1.0, 0.9);
+              } else if object.name.contains("tea") {
+                v.texc = (0.6, 0.3);
+              } else {
+                v.texc = (0.0, 0.0);
+              }
+            }
+            vertices.push(v);
           }
         }
       }
