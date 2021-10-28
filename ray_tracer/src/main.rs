@@ -465,7 +465,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   let mut last_raytrace_key_press = false;
 
   // let mut rt = ray_tracer::RayTracer::new(fb_w as u32, fb_h as u32, &frame);
-  let debug_scale = 2i32;
+  let debug_scale = 8i32;
   let mut rt = ray_tracer::RayTracer::new(fb_w as u32 / debug_scale as u32, fb_h as u32 / debug_scale as u32, &frame);
   gl::BindTexture(gl::TEXTURE_2D, plain_tex);
   gl::TexImage2D(
@@ -678,7 +678,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
       if !rt.frame_filled() {
         gl::Enable(gl::BLEND);
-        gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+        gl::BlendEquation(gl::FUNC_ADD);
+        gl::BlendFunc(gl::ONE, gl::ONE_MINUS_SRC_ALPHA);
       }
 
       gl::UseProgram(plain_prog);

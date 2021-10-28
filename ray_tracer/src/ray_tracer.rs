@@ -211,6 +211,9 @@ impl<'a> RayTracer<'a> {
     if self.sample_count == 0 {
       for (x, y) in &self.sample_order[self.sample_order_pos..] {
         let i = (*y * self.w + x) as usize;
+        self.ibuf[i * 4 + 0] = 0;
+        self.ibuf[i * 4 + 1] = 0;
+        self.ibuf[i * 4 + 2] = 0;
         self.ibuf[i * 4 + 3] = 0;
       }
     }
