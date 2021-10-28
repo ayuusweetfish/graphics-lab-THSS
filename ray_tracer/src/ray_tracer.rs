@@ -295,7 +295,8 @@ impl<'a> RayTracer<'a> {
         };
       albedo * self.ray_colour(intxn, refl, w * rate)
     } else {
-      glm::vec3(0.6, 0.6, 0.6) * w
+      let angle = glm::normalize(dir).y * 0.5 + 0.5;
+      glm::vec3(0.6, 0.6 + angle * 0.1, 0.6 + angle * 0.2) * w
     }
   }
 

@@ -98,6 +98,9 @@ pub fn load<P: AsRef<std::path::Path>>(p: P)
                 v.texc = (-1.0, 0.9);
               } else if object.name.contains("tea") {
                 v.texc = (0.6, 0.3);
+              } else if object.name.contains("Metal") {
+                v.texc = (0.9, 0.8);
+                v.mirror = true;
               } else {
                 v.texc = (0.0, 0.0);
               }
