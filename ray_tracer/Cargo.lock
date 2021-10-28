@@ -766,6 +766,7 @@ dependencies = [
  "glfw",
  "glm",
  "image",
+ "rand 0.8.4",
  "relative-path",
  "wavefront_obj",
 ]
