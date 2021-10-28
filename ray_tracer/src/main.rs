@@ -464,6 +464,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
   // Hide cursor
   window.set_cursor_mode(glfw::CursorMode::Disabled);
+  window.set_sticky_keys(true);
   let mut last_cursor = window.get_cursor_pos();
 
   while !window.should_close() {

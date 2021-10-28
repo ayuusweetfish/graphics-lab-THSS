@@ -1,5 +1,5 @@
 use crate::scene_loader;
-use rand::Rng;
+use rand::{Rng, seq::SliceRandom};
 
 pub struct RayTracer<'a> {
   w: u32,
@@ -17,6 +17,9 @@ pub struct RayTracer<'a> {
 
   tris: Vec<TriangleIndex>,
   bvh: bvh::bvh::BVH,
+
+  sample_order: Vec<(u32, u32)>,
+  sample_order_pos: usize,
 
   cbuf: Vec<[f32; 3]>,
   sample_count: u32,
@@ -95,6 +98,11 @@ impl<'a> RayTracer<'a> {
       tris,
       bvh,
 
+      sample_order: (0..w).into_iter()
+        .flat_map(|x| (0..h).into_iter().map(move |y| (x, y)))
+        .collect(),
+      sample_order_pos: 0,
+
       cbuf: vec![[0.0; 3]; (w * h) as usize],
       sample_count: 0,
       ibuf: vec![0; (w * h * 3) as usize],
@@ -129,39 +137,48 @@ impl<'a> RayTracer<'a> {
 
     self.cbuf.iter_mut().map(|x| *x = [0.0; 3]).for_each(drop);
     self.sample_count = 0;
+
+    self.sample_order.shuffle(&mut rand::thread_rng());
+    self.sample_order_pos = 0;
   }
 
   pub fn render(&mut self) {
-    for y in 0..self.h {
-      for x in 0..self.w {
-        // if y != self.h / 2 || x != self.w / 2 { continue; }
-        // Cast a ray
-        let rx = (x as f32 + rand::random::<f32>()) / self.w as f32;
-        let ry = (y as f32 + rand::random::<f32>()) / self.h as f32;
-        let ray_ori = self.cam_corner
-          + self.cam_horz_span * rx
-          + self.cam_vert_span * ry
-          - self.cam_pos;
-        let ray_ori = glm::normalize(ray_ori);
+    for rept in 0..20000 {
+      let (x, y) = self.sample_order[self.sample_order_pos];
+      // if y != self.h / 2 || x != self.w / 2 { continue; }
+      // Cast a ray
+      let rx = (x as f32 + rand::random::<f32>()) / self.w as f32;
+      let ry = (y as f32 + rand::random::<f32>()) / self.h as f32;
+      let ray_ori = self.cam_corner
+        + self.cam_horz_span * rx
+        + self.cam_vert_span * ry
+        - self.cam_pos;
+      let ray_ori = glm::normalize(ray_ori);
 
-        //if y == self.h / 2 - 1 && (x as i32 - self.w as i32 / 2).abs() <= 6 {
-        /*if y == 39 && x == 224 {
-          self.debug = true;
-        }*/
-        let k = self.ray_colour(self.cam_pos, ray_ori, 1.0);
+      //if y == self.h / 2 - 1 && (x as i32 - self.w as i32 / 2).abs() <= 6 {
+      /*if y == 39 && x == 224 {
+        self.debug = true;
+      }*/
+      let k = self.ray_colour(self.cam_pos, ray_ori, 1.0);
 
-        let i = (y * self.w + x) as usize;
-        self.cbuf[i][0] += k[0];
-        self.cbuf[i][1] += k[1];
-        self.cbuf[i][2] += k[2];
-        if self.debug {
-          println!("{} {} {:?} {:?}", x, y, ray_ori, k[0]);
-          self.debug = false;
-        }
+      let i = (y * self.w + x) as usize;
+      let s = self.sample_count as f32;
+      self.cbuf[i][0] = (self.cbuf[i][0] * s + k[0]) / (s + 1.0);
+      self.cbuf[i][1] = (self.cbuf[i][1] * s + k[1]) / (s + 1.0);
+      self.cbuf[i][2] = (self.cbuf[i][2] * s + k[2]) / (s + 1.0);
+      if self.debug {
+        println!("{} {} {:?} {:?}", x, y, ray_ori, k[0]);
+        self.debug = false;
+      }
+
+      self.sample_order_pos += 1;
+      if self.sample_order_pos as u32 == self.w * self.h {
+        self.sample_order.shuffle(&mut rand::thread_rng());
+        self.sample_order_pos = 0;
+        self.sample_count += 1;
       }
     }
 
-    self.sample_count += 1;
     println!("{}", self.sample_count);
   }
 
@@ -171,7 +188,7 @@ impl<'a> RayTracer<'a> {
         let i = (y * self.w + x) as usize;
         for ch in 0..3 {
           self.ibuf[i * 3 + ch] =
-            ((self.cbuf[i][ch] / self.sample_count as f32).powf(1.0/2.2) * 255.99) as u8;
+            (self.cbuf[i][ch].powf(1.0/2.2) * 255.99) as u8;
         }
         /*if self.ibuf[i * 3] <= 20 {
           self.ibuf[i * 3] = 255;
