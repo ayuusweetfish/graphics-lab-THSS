@@ -196,8 +196,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       out_colour = vec4(ambient_colour + (diff + spec) * light_colour, 1.0);
       if (f_texid < 16)
         out_colour *= texture(textures[int(f_texid + 0.5)], f_texcoord);
-      else
-        out_colour *= vec4(0.6, 0.9, 0.5, 1);
+      else if (f_texcoord.r > 0)
+        out_colour *= vec4(f_texcoord.rg, (f_texcoord.r + f_texcoord.g) * 0.3, 1);
 
       out_colour.rgb = pow(out_colour.rgb, vec3(1 / 2.2));
     }
