@@ -16,6 +16,7 @@ pub struct Vertex {
 pub struct Frame {
   pub vertices: Vec<Vertex>,
   pub textures: Vec<(u32, u32, Vec<u8>)>,
+  pub object_range: std::collections::HashMap<String, (usize, usize)>,
 }
 
 pub fn load<P: AsRef<std::path::Path>>(p: P)
@@ -58,7 +59,9 @@ pub fn load<P: AsRef<std::path::Path>>(p: P)
   // Read geometry
   let objects = obj.objects;
   let mut vertices = vec![];
+  let mut object_range = std::collections::HashMap::new();
   for object in &objects {
+    let vertex_start = vertices.len();
     for geom in &object.geometry {
       let (mat_idx, texid) = *mtl_lookup.get(
         geom.material_name.as_ref().ok_or("no material")?
@@ -110,10 +113,12 @@ pub fn load<P: AsRef<std::path::Path>>(p: P)
         }
       }
     }
+    object_range.insert(object.name.clone(), (vertex_start, vertices.len()));
   }
 
   Ok(Frame {
     vertices,
     textures,
+    object_range,
   })
 }

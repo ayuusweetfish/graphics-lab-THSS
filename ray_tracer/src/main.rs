@@ -1,5 +1,6 @@
 mod gl;
 mod scene_loader;
+mod ibl;
 mod ray_tracer;
 
 use glfw::Context;
@@ -35,7 +36,7 @@ fn shader(ty: gl::types::GLenum, src: &str) -> gl::types::GLuint {
   id
 }
 
-fn program(vs: &str, fs: &str) -> gl::types::GLuint {
+pub fn program(vs: &str, fs: &str) -> gl::types::GLuint {
   let vs = shader(gl::VERTEX_SHADER, vs);
   let fs = shader(gl::FRAGMENT_SHADER, fs);
   let prog = gl::CreateProgram();
@@ -445,6 +446,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   gl::UseProgram(plain_prog);
   gl::Uniform1i(plain_uni_tex, 0);
 
+  // IBL
+  let (start, end) = *frame.object_range.get("Metal_Icosphere")
+    .ok_or("object Metal_Icosphere not found")?;
+  let ibl = ibl::IBL::new(&frame.vertices[start..end]);
+
   check_gl_errors();
 
   // Data kept between frames
@@ -642,6 +648,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       gl::Enable(gl::DEPTH_TEST);
       gl::DepthFunc(gl::LESS);
       gl::DrawArrays(gl::TRIANGLES, 0, frame.vertices.len() as gl::int);
+
+      gl::DepthFunc(gl::LEQUAL);
+      ibl.draw(vp, cam_pos, light_pos);
 
       if filter_on {
         gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
