@@ -184,7 +184,7 @@ impl<'a> RayTracer<'a> {
       }
 
       match start.elapsed() {
-        Ok(dur) if dur >= std::time::Duration::from_millis(10) => break,
+        Ok(dur) if dur >= std::time::Duration::from_millis(40) => break,
         Err(_) => break,
         _ => continue,
       }
@@ -243,9 +243,24 @@ impl<'a> RayTracer<'a> {
           self.frame.vertices[tri_idx * 3 + 2].pos,
           intxn);
       }
-      self.ray_colour(intxn, refl, w * 0.5)
+      let albedo =
+        if self.frame.vertices[tri_idx * 3].texid != 255 {
+          // glm::vec3(0.8, 0.5, 0.4)
+          tex_sample(
+            &self.frame.textures[self.frame.vertices[tri_idx * 3].texid as usize],
+            tuple_vec3(self.frame.vertices[tri_idx * 3 + 0].pos),
+            tuple_vec3(self.frame.vertices[tri_idx * 3 + 1].pos),
+            tuple_vec3(self.frame.vertices[tri_idx * 3 + 2].pos),
+            tuple_vec2(self.frame.vertices[tri_idx * 3 + 0].texc),
+            tuple_vec2(self.frame.vertices[tri_idx * 3 + 1].texc),
+            tuple_vec2(self.frame.vertices[tri_idx * 3 + 2].texc),
+            intxn)
+        } else {
+          glm::vec3(1.0, 1.0, 1.0)
+        };
+      albedo * self.ray_colour(intxn, refl, w * 0.5)
     } else {
-      glm::vec3(0.3, 0.3, 0.2) * w
+      glm::vec3(1.0, 1.0, 1.0) * w
     }
   }
 
@@ -272,6 +287,7 @@ impl<'a> RayTracer<'a> {
   }
 }
 
+fn tuple_vec2(p: (f32, f32)) -> glm::Vec2 { glm::vec2(p.0, p.1) }
 fn tuple_vec3(p: (f32, f32, f32)) -> glm::Vec3 { glm::vec3(p.0, p.1, p.2) }
 
 // Möller–Trumbore
@@ -316,4 +332,32 @@ fn lambertian(n: glm::Vec3) -> glm::Vec3 {
   };
   let q = glm::cross(n, p);
   p * x + q * y + n * z
+}
+
+fn tex_sample(
+  tex: &(u32, u32, Vec<u8>),
+  p0: glm::Vec3, p1: glm::Vec3, p2: glm::Vec3,
+  t0: glm::Vec2, t1: glm::Vec2, t2: glm::Vec2,
+  q: glm::Vec3,
+) -> glm::Vec3 {
+  let i0 = q - p0;
+  let i1 = q - p1;
+  let i2 = q - p2;
+  let a0 = glm::ext::sqlength(glm::cross(i1, i2));
+  let a1 = glm::ext::sqlength(glm::cross(i2, i0));
+  let a2 = glm::ext::sqlength(glm::cross(i0, i1));
+  let texc = (t0 * a0 + t1 * a1 + t2 * a2) / (a0 + a1 + a2);
+  let texc = texc * glm::vec2(tex.0 as f32, tex.1 as f32);
+
+  let buf = &tex.2;
+
+  // Nearest filter
+  let x = (texc.x as u32).min(tex.0 - 1);
+  let y = (texc.y as u32).min(tex.1 - 1);
+  let k = glm::vec3(
+    buf[(y * tex.0 + x) as usize * 3 + 0] as f32,
+    buf[(y * tex.0 + x) as usize * 3 + 1] as f32,
+    buf[(y * tex.0 + x) as usize * 3 + 2] as f32,
+  ) / 255.0;
+  k
 }
