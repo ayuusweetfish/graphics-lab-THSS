@@ -73,6 +73,7 @@ impl IBL {
       #version 330 core
       uniform vec3 light_pos;
       uniform vec3 cam_pos;
+      uniform samplerCube irradiance_map;
       uniform float metallic;
       uniform float roughness;
       in vec3 f_pos;
@@ -174,9 +175,13 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     // add to outgoing radiance Lo
     Lo += (kD * albedo / PI + specular) * radiance * NdotL;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
 
-    // ambient lighting (note that the next IBL tutorial will replace
-    // this ambient lighting with environment lighting).
-    vec3 ambient = vec3(0.03) * albedo * ao;
+    // ambient lighting (we now use IBL as the ambient term)
+    kS = fresnelSchlick(max(dot(N, V), 0.0), F0);
+    kD = 1.0 - kS;
+    kD *= 1.0 - metallic;
+    vec3 irradiance = texture(irradiance_map, N).rgb;
+    vec3 diffuse      = irradiance * albedo;
+    vec3 ambient = (kD * diffuse) * ao;
 
     vec3 color = ambient + Lo;
 
@@ -194,8 +199,10 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     let uni_light_pos = gl::GetUniformLocation(prog, "light_pos\0".as_ptr().cast());
     let uni_metallic = gl::GetUniformLocation(prog, "metallic\0".as_ptr().cast());
     let uni_roughness = gl::GetUniformLocation(prog, "roughness\0".as_ptr().cast());
+    let uni_irradiance_map = gl::GetUniformLocation(prog, "irradiance_map\0".as_ptr().cast());
 
-    // Irradiance map
+    gl::UseProgram(prog);
+    gl::Uniform1i(uni_irradiance_map, 0);
 
     Self {
       vao, vbo, prog,
@@ -234,6 +241,10 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     gl::Uniform3f(self.uni_light_pos, light_pos.x, light_pos.y, light_pos.z);
     gl::Uniform1f(self.uni_metallic, metallic);
     gl::Uniform1f(self.uni_roughness, roughness);
+
+    // Bind textures
+    gl::ActiveTexture(gl::TEXTURE0);
+    gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.irradiance_map);
 
     gl::BindVertexArray(self.vao);
     gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
