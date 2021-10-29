@@ -10,6 +10,8 @@ pub struct IBL {
   uni_vp: gl::int,
   uni_cam_pos: gl::int,
   uni_light_pos: gl::int,
+  uni_metallic: gl::int,
+  uni_roughness: gl::int,
   num_vertices: gl::int,
 
   skybox: gl::uint,
@@ -71,6 +73,8 @@ impl IBL {
       #version 330 core
       uniform vec3 light_pos;
       uniform vec3 cam_pos;
+      uniform float metallic;
+      uniform float roughness;
       in vec3 f_pos;
       in vec3 f_normal;
       out vec4 out_colour;
@@ -124,8 +128,6 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
 
       void main() {
         vec3 albedo = vec3(0.9, 0.8, 0.5);
-        float metallic = 0.9;
-        float roughness = 0.6;
         float ao = 0.5;
 
         vec3 N = f_normal;
@@ -190,12 +192,14 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     let uni_vp = gl::GetUniformLocation(prog, "VP\0".as_ptr().cast());
     let uni_cam_pos = gl::GetUniformLocation(prog, "cam_pos\0".as_ptr().cast());
     let uni_light_pos = gl::GetUniformLocation(prog, "light_pos\0".as_ptr().cast());
+    let uni_metallic = gl::GetUniformLocation(prog, "metallic\0".as_ptr().cast());
+    let uni_roughness = gl::GetUniformLocation(prog, "roughness\0".as_ptr().cast());
 
     // Irradiance map
 
     Self {
       vao, vbo, prog,
-      uni_vp, uni_cam_pos, uni_light_pos,
+      uni_vp, uni_cam_pos, uni_light_pos, uni_metallic, uni_roughness,
       num_vertices,
 
       skybox: load_hdr_cubemap(&["ibl/skybox_posx.hdr"]),
@@ -220,12 +224,16 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     vp: glm::Mat4,
     cam_pos: glm::Vec3,
     light_pos: glm::Vec3,
+    metallic: f32,
+    roughness: f32,
   ) {
     // Set uniforms
     gl::UseProgram(self.prog);
     gl::UniformMatrix4fv(self.uni_vp, 1, gl::FALSE, vp.as_array().as_ptr().cast());
     gl::Uniform3f(self.uni_cam_pos, cam_pos.x, cam_pos.y, cam_pos.z);
     gl::Uniform3f(self.uni_light_pos, light_pos.x, light_pos.y, light_pos.z);
+    gl::Uniform1f(self.uni_metallic, metallic);
+    gl::Uniform1f(self.uni_roughness, roughness);
 
     gl::BindVertexArray(self.vao);
     gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);

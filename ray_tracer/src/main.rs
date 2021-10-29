@@ -442,6 +442,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     100.0,
   );
 
+  let mut metallic = 0.9;
+  let mut roughness = 0.6;
+
   let mut raytrace_on = false;
   let mut last_raytrace_key_press = false;
 
@@ -507,8 +510,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     last_raytrace_key_press = raytrace_key_press;
 
-    // Camera navigation
+    // Navigation and patameters
     if !raytrace_on {
+      // Camera navigation
       // Panning
       let move_dist = delta_time * 8.0;
       let cam_land = glm::normalize(cam_ori - glm::ext::projection(cam_ori, cam_up));
@@ -559,6 +563,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // In case drift happens
         cam_ori = glm::normalize(cam_ori);
       }
+
+      // PBR parameters
+      let adjustment = delta_time * 0.3;
+      if window.get_key(glfw::Key::Num1) == glfw::Action::Press {
+        metallic -= adjustment;
+      }
+      if window.get_key(glfw::Key::Num2) == glfw::Action::Press {
+        metallic += adjustment;
+      }
+      metallic = metallic.max(0.0).min(1.0);
+      if window.get_key(glfw::Key::Num3) == glfw::Action::Press {
+        roughness -= adjustment;
+      }
+      if window.get_key(glfw::Key::Num4) == glfw::Action::Press {
+        roughness += adjustment;
+      }
+      roughness = roughness.max(0.0).min(1.0);
     }
 
     if !raytrace_on || !rt.frame_filled() {
@@ -625,7 +646,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       gl::DrawArrays(gl::TRIANGLES, 0, frame.vertices.len() as gl::int);
 
       gl::DepthFunc(gl::LEQUAL);
-      ibl.draw(vp, cam_pos, light_pos);
+      ibl.draw(vp, cam_pos, light_pos, metallic, roughness);
 
       if filter_on {
         gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
