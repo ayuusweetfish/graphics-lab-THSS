@@ -11,6 +11,9 @@ pub struct IBL {
   uni_cam_pos: gl::int,
   uni_light_pos: gl::int,
   num_vertices: gl::int,
+
+  irradiance_map: gl::uint,
+  radiance_map: gl::uint,
 }
 
 impl IBL {
@@ -187,10 +190,24 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     let uni_cam_pos = gl::GetUniformLocation(prog, "cam_pos\0".as_ptr().cast());
     let uni_light_pos = gl::GetUniformLocation(prog, "light_pos\0".as_ptr().cast());
 
+    // Irradiance map
+
     Self {
       vao, vbo, prog,
       uni_vp, uni_cam_pos, uni_light_pos,
       num_vertices,
+
+      irradiance_map: load_hdr_cubemap(&[
+        "ibl/irrad_posx.hdr",
+      ]),
+      radiance_map: load_hdr_cubemap(&[
+        "ibl/rad_posx_0_256x256.hdr",
+        "ibl/rad_posx_1_128x128.hdr",
+        "ibl/rad_posx_2_64x64.hdr",
+        "ibl/rad_posx_3_32x32.hdr",
+        "ibl/rad_posx_4_16x16.hdr",
+        "ibl/rad_posx_5_8x8.hdr",
+      ]),
     }
   }
 
@@ -210,4 +227,45 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     gl::BindBuffer(gl::ARRAY_BUFFER, self.vbo);
     gl::DrawArrays(gl::TRIANGLES, 0, self.num_vertices);
   }
+}
+
+fn load_hdr_cubemap(
+  files: &[&str],
+) -> gl::uint {
+  let mut tex = 0;
+  gl::GenTextures(1, &mut tex);
+  gl::ActiveTexture(gl::TEXTURE0);
+  gl::BindTexture(gl::TEXTURE_CUBE_MAP, tex);
+  let face_replacement = [
+    "posx", "negx", "posy", "negy", "posz", "negz"
+  ];
+  for (mipmap_level, mipmap_base_file) in files.iter().enumerate() {
+    for (face_index, face_name) in face_replacement.iter().enumerate() {
+      let file = mipmap_base_file.replacen("posx", face_name, 1);
+      let decoder = image::codecs::hdr::HdrDecoder::new(
+        std::io::BufReader::new(std::fs::File::open(&file)
+          .expect(&format!("cannot open file {}", file)))
+      ).expect(&format!("file {} is not a proper HDR file", file));
+      let md = decoder.metadata();
+      let (w, h) = (md.width, md.height);
+      let buf = decoder.read_image_hdr()
+        .expect(&format!("file {} is not a proper HDR file", file)).as_ptr();
+      gl::TexImage2D(
+        gl::TEXTURE_CUBE_MAP_POSITIVE_X + face_index as u32,
+        mipmap_level as gl::int,
+        gl::RGB as gl::int,
+        w as gl::int, h as gl::int, 0,
+        gl::RGB,
+        gl::UNSIGNED_BYTE,
+        buf.cast()
+      );
+      println!("Loaded IBL cubemap (mipmap {}) {}", mipmap_level, file);
+    }
+  }
+  gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MIN_FILTER, gl::LINEAR as gl::int);
+  gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::int);
+  gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as gl::int);
+  gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as gl::int);
+  gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_R, gl::CLAMP_TO_EDGE as gl::int);
+  tex
 }

@@ -1,0 +1,7 @@
+#?RADIANCE
+# Output from cmft.
+FORMAT=32-bit_rle_rgbe
+EXPOSURE=1
+
+-Y 16 +X 16
+x™õ€w–ð€u“ì€té€sè€rŽì€qò€9I9Mˆ;R”>Y¡Cb²HkÃMuÕS€æXŠöv’â€tÝ€sŒÙ€qŠÖ€pˆÖ€n‡Ù€m‡ß€m‹ë€n‘ý€8MŠ;T—?]¨Dg¹JpÊOzÛTƒér‰Ë€p†Æ€oƒÂ€m€¿€k~¿€i}Á€h}Ç€fÒ€g…â€jŽø€7M‰;V™@_ªEiºJrÊNz×l}°€jz«€ix§€gu¤€er£€bp¥€`oª€^q³€^uÁ€_}Õ€d‰î€5L…9U•>^¥Bf³Fn¿dp“€blŽ€`iŠ€^f†€\c„€Ya…€V_ˆ€T_€Rb›€Sh«€VrÁ€[€Ü€cù€5PŠ9X˜<^£·Áì±ºá¬³×§¬Ï¢¥ÊœŸÊ•›Ì˜Õ‹šäŠ£þFY‘€Je¨€PsÁ€WÛ€^ò€2Mƒ¢¡¶›™ª”‘ŸŽ‰–‡‚{Ž{vtr‘oqšlv«m‚Ær”ë=UŠ€Ca¡€Im¶€OxÈ€ƒˆ„z{÷âá~çÑÏ~ØÂÂ~Ë´º~¿©¶~´¡¶~©½~£¡Ò~¡¯ö~Td–Zv·dŠÛ7O€<Y€ôÓÆ~ß¾®~Ê«š~¸šŠ~¨‹}~šu~uo~†mm~üÑÝ}ïÒñ}uqŽ~x‚±~‚›à~H]‹Qm¨Z}ÃÔ¨~½”{~¨‚j~”r\~ƒdR~í³–}Ú¢Œ}Ì–†}¿„}¶Œ}±•£}´©Ì}`e„~kz©~x“Ó~‡­þ~½ˆk~¦vZ~fM~ú¯…}Ú˜u}Ã†j}³zc}¨r^} l\}™j^}•nh}–x~}žŒ }¬¨Ï}_e„~kx£~¬rT~—cG~‚T=~â’j}Æ_}±qW}¤hR}œcO}–_M}’^N}_R}Žd\}’oo}š€Š}§–­}·°Ö}¢dF~ŽW<~ù—j}Ú„_}ÂuW}±kR}§dN}¡`M}œ^L}™]L}–]N}”`S}•e\}™ok} |}ª˜}›Z>~‰P7~õŽd}Û\}ÇsV}ºlR}²gP}®eP}ªcO}§cP}¤bQ}¡cS} fX}¡k`}£rk}©|z}–U:~‡L5~öŠb}á~\}ÑvX}ÇpV}ÁmU}¾lT}»kU}¸jU}´iV}±iW}®jZ}¬m^}¬qd}®vl}“Q8~‡J4~ù‰b}è€^}Üz[}ÔvZ}ÐtY}ÎsY}ËrZ}ÈrZ}Äq[}Àp\}»p^}¸q`}¶rc}µug}
