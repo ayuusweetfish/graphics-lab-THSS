@@ -126,6 +126,10 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
 {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
+{
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(1.0 - cosTheta, 5.0);
+}
 
       void main() {
         vec3 albedo = vec3(0.9, 0.8, 0.5);
@@ -176,7 +180,7 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     Lo += (kD * albedo / PI + specular) * radiance * NdotL;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
 
     // ambient lighting (we now use IBL as the ambient term)
-    kS = fresnelSchlick(max(dot(N, V), 0.0), F0);
+    kS = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness);
     kD = 1.0 - kS;
     kD *= 1.0 - metallic;
     vec3 irradiance = texture(irradiance_map, N).rgb;
