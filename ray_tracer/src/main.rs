@@ -442,6 +442,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     100.0,
   );
 
+  let mut scene_on = true;
+  let mut last_scene_key_press = false;
   let mut metallic = 0.9;
   let mut roughness = 0.6;
 
@@ -499,7 +501,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let filter_on =
       window.get_key(glfw::Key::LeftShift) == glfw::Action::Press;
 
-    // Toggled filter?
+    // Toggled ray tracing?
     let raytrace_key_press =
       window.get_key(glfw::Key::Space) == glfw::Action::Press;
     if !last_raytrace_key_press && raytrace_key_press {
@@ -580,6 +582,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         roughness += adjustment;
       }
       roughness = roughness.max(0.0).min(1.0);
+
+      // Toggled scene on/off?
+      let scene_key_press =
+        window.get_key(glfw::Key::Num0) == glfw::Action::Press;
+      if !last_scene_key_press && scene_key_press {
+        scene_on = !scene_on;
+      }
+      last_scene_key_press = scene_key_press;
     }
 
     if !raytrace_on || !rt.frame_filled() {
@@ -626,24 +636,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       gl::DrawArrays(gl::TRIANGLES, 0, 36);
 
       // Scene
-      gl::UseProgram(scene_prog);
-      // Textures
-      for (i, mat_tex) in scene_texs.iter().enumerate() {
-        gl::ActiveTexture(gl::TEXTURE0 + (i as u32));
-        gl::BindTexture(gl::TEXTURE_2D, *mat_tex);
-      }
-      // Uniforms
-      gl::UniformMatrix4fv(scene_uni_vp, 1, gl::FALSE, vp.as_array().as_ptr().cast());
-      gl::Uniform3f(scene_uni_cam_pos, cam_pos.x, cam_pos.y, cam_pos.z);
-      gl::Uniform3f(scene_uni_light_pos, light_pos.x, light_pos.y, light_pos.z);
-      // Draw
-      gl::BindVertexArray(scene_vao);
-      gl::BindBuffer(gl::ARRAY_BUFFER, scene_vbo);
       gl::DepthMask(gl::TRUE);
       gl::Enable(gl::CULL_FACE);
       gl::Enable(gl::DEPTH_TEST);
-      gl::DepthFunc(gl::LESS);
-      gl::DrawArrays(gl::TRIANGLES, 0, frame.vertices.len() as gl::int);
+      if scene_on {
+        gl::UseProgram(scene_prog);
+        // Textures
+        for (i, mat_tex) in scene_texs.iter().enumerate() {
+          gl::ActiveTexture(gl::TEXTURE0 + (i as u32));
+          gl::BindTexture(gl::TEXTURE_2D, *mat_tex);
+        }
+        // Uniforms
+        gl::UniformMatrix4fv(scene_uni_vp, 1, gl::FALSE, vp.as_array().as_ptr().cast());
+        gl::Uniform3f(scene_uni_cam_pos, cam_pos.x, cam_pos.y, cam_pos.z);
+        gl::Uniform3f(scene_uni_light_pos, light_pos.x, light_pos.y, light_pos.z);
+        // Draw
+        gl::BindVertexArray(scene_vao);
+        gl::BindBuffer(gl::ARRAY_BUFFER, scene_vbo);
+        gl::DepthFunc(gl::LESS);
+        gl::DrawArrays(gl::TRIANGLES, 0, frame.vertices.len() as gl::int);
+      }
 
       gl::DepthFunc(gl::LEQUAL);
       ibl.draw(vp, cam_pos, light_pos, metallic, roughness);
