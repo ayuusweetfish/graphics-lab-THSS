@@ -68,37 +68,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   window.set_key_polling(true);
   window.make_current();
 
+  // Load scene
+  let frame = scene_loader::load("trees2/trees2.obj")?;
+  // let frame = scene_loader::load("test1.obj")?;
+
+  // IBL
+  let (start, end) = *frame.object_range.get("Metal_Icosphere")
+    .ok_or("object Metal_Icosphere not found")?;
+  let ibl = ibl::IBL::new(&frame.vertices[start..end]);
+
   // Sky box
-  let mut skybox_tex = 0;
-  gl::GenTextures(1, &mut skybox_tex);
-  gl::ActiveTexture(gl::TEXTURE0);
-  gl::BindTexture(gl::TEXTURE_CUBE_MAP, skybox_tex);
-  for (i, file) in [
-    "skybox/px.jpg",
-    "skybox/nx.jpg",
-    "skybox/py.jpg",
-    "skybox/ny.jpg",
-    "skybox/pz.jpg",
-    "skybox/nz.jpg",
-  ].into_iter().enumerate() {
-    let img = image::io::Reader::open(file)?.decode()?;
-    let (w, h) = img.dimensions();
-    let buf = img.into_rgb8().into_raw();
-    gl::TexImage2D(
-      gl::TEXTURE_CUBE_MAP_POSITIVE_X + i as u32,
-      0,
-      gl::RGB as gl::int,
-      w as gl::int, h as gl::int, 0,
-      gl::RGB,
-      gl::UNSIGNED_BYTE,
-      buf.as_ptr().cast()
-    );
-  }
-  gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MIN_FILTER, gl::LINEAR as gl::int);
-  gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_MAG_FILTER, gl::LINEAR as gl::int);
-  gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as gl::int);
-  gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as gl::int);
-  gl::TexParameteri(gl::TEXTURE_CUBE_MAP, gl::TEXTURE_WRAP_R, gl::CLAMP_TO_EDGE as gl::int);
+  let skybox_tex = ibl.skybox();
 
   let skybox_prog = program(r"
     #version 330 core
@@ -117,7 +97,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     out vec4 out_colour;
 
     void main() {
-      out_colour = texture(skybox, f_tex_coord);
+      vec3 s = texture(skybox, f_tex_coord).rgb;
+      // Tone mapping
+      s = s / (s + vec3(1));
+      s = pow(s, vec3(1/2.2));
+      out_colour = vec4(s, 1);
     }
   ");
 
@@ -222,10 +206,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   let mut scene_vbo = 0;
   gl::GenBuffers(1, &mut scene_vbo);
   gl::BindBuffer(gl::ARRAY_BUFFER, scene_vbo);
-
-  // Load scene
-  let frame = scene_loader::load("trees2/trees2.obj")?;
-  // let frame = scene_loader::load("test1.obj")?;
 
   gl::EnableVertexAttribArray(0);
   gl::VertexAttribPointer(
@@ -445,11 +425,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   let plain_uni_tex = gl::GetUniformLocation(fb_prog, "tex\0".as_ptr().cast());
   gl::UseProgram(plain_prog);
   gl::Uniform1i(plain_uni_tex, 0);
-
-  // IBL
-  let (start, end) = *frame.object_range.get("Metal_Icosphere")
-    .ok_or("object Metal_Icosphere not found")?;
-  let ibl = ibl::IBL::new(&frame.vertices[start..end]);
 
   check_gl_errors();
 

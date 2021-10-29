@@ -12,6 +12,7 @@ pub struct IBL {
   uni_light_pos: gl::int,
   num_vertices: gl::int,
 
+  skybox: gl::uint,
   irradiance_map: gl::uint,
   radiance_map: gl::uint,
 }
@@ -197,9 +198,8 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
       uni_vp, uni_cam_pos, uni_light_pos,
       num_vertices,
 
-      irradiance_map: load_hdr_cubemap(&[
-        "ibl/irrad_posx.hdr",
-      ]),
+      skybox: load_hdr_cubemap(&["ibl/skybox_posx.hdr"]),
+      irradiance_map: load_hdr_cubemap(&["ibl/irrad_posx.hdr"]),
       radiance_map: load_hdr_cubemap(&[
         "ibl/rad_posx_0_256x256.hdr",
         "ibl/rad_posx_1_128x128.hdr",
@@ -210,6 +210,10 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
       ]),
     }
   }
+
+  pub fn skybox(&self) -> gl::uint { self.skybox }
+  pub fn irradiance_map(&self) -> gl::uint { self.irradiance_map }
+  pub fn radiance_map(&self) -> gl::uint { self.radiance_map }
 
   pub fn draw(
     &self,
@@ -253,10 +257,10 @@ fn load_hdr_cubemap(
       gl::TexImage2D(
         gl::TEXTURE_CUBE_MAP_POSITIVE_X + face_index as u32,
         mipmap_level as gl::int,
-        gl::RGB as gl::int,
+        gl::RGB16F as gl::int,
         w as gl::int, h as gl::int, 0,
         gl::RGB,
-        gl::UNSIGNED_BYTE,
+        gl::FLOAT,
         buf.cast()
       );
       println!("Loaded IBL cubemap (mipmap {}) {}", mipmap_level, file);

@@ -1,3 +1,12 @@
+Generate skybox:
+```sh
+_build/osx64_clang/bin/cmftRelease \
+  --input ~/Downloads/11-13_Forest_D_scaled.hdr \
+  --outputNum 1 \
+  --output0 ~/Downloads/skybox \
+  --output0params hdr,rgbe,facelist
+```
+
 Generate irradiance map:
 ```sh
 _build/osx64_clang/bin/cmftRelease \
