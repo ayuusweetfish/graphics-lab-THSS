@@ -149,7 +149,6 @@ impl<'a> RayTracer<'a> {
     loop {
       for _rept in 0..200 {
         let (x, y) = self.sample_order[self.sample_order_pos];
-        // if y != self.h / 2 || x != self.w / 2 { continue; }
         // Cast a ray
         let rx = (x as f32 + rand::random::<f32>()) / self.w as f32;
         let ry = (y as f32 + rand::random::<f32>()) / self.h as f32;
@@ -159,7 +158,6 @@ impl<'a> RayTracer<'a> {
           - self.cam_pos;
         let ray_ori = glm::normalize(ray_ori);
 
-        self.debug = x == self.w / 2 && y == self.h / 2;
         let k = self.ray_colour(self.cam_pos, ray_ori, 1.0);
 
         let i = (y * self.w + x) as usize;
@@ -225,13 +223,18 @@ impl<'a> RayTracer<'a> {
       println!("{:?} - {:?}", cen.as_array(), glm::normalize(dir).as_array());
     }
     if let Some((tri_idx, intxn)) = self.collide(cen, dir) {
-      let v = &self.frame.vertices[tri_idx * 3];
-      let norm = tuple_vec3(v.norm);
+      let v0 = &self.frame.vertices[tri_idx * 3 + 0];
+      let v1 = &self.frame.vertices[tri_idx * 3 + 1];
+      let v2 = &self.frame.vertices[tri_idx * 3 + 2];
+      let norm = tri_interpolate(
+        tuple_vec3(v0.pos), tuple_vec3(v1.pos), tuple_vec3(v2.pos),
+        tuple_vec3(v0.norm), tuple_vec3(v1.norm), tuple_vec3(v2.norm),
+        intxn);
       let side_in = glm::dot(dir, norm) < 0.0;
       // The normal may need to be flipped
       let norm = if side_in { norm } else { -norm };
       // Reflect or refract?
-      let refr_index = v.refr;
+      let refr_index = v0.refr;
       let refr_index = if side_in { 1.0 / refr_index } else { refr_index };
       let refract = if refr_index != 0.0 {
         let cos_theta = glm::dot(-dir, norm).min(1.0);
@@ -260,37 +263,30 @@ impl<'a> RayTracer<'a> {
       };
       if self.debug {
         println!("  tri = \n    {:?}\n    {:?}\n    {:?}\n  intxn = {:?}",
-          self.frame.vertices[tri_idx * 3].pos,
-          self.frame.vertices[tri_idx * 3 + 1].pos,
-          self.frame.vertices[tri_idx * 3 + 2].pos,
-          intxn);
+          v0.pos, v1.pos, v2.pos, intxn);
       }
       let mut rate = 0.5;
       let albedo =
         if self.frame.vertices[tri_idx * 3].texid != 255 {
           // glm::vec3(0.8, 0.5, 0.4)
           tex_sample(
-            &self.frame.textures[v.texid as usize],
-            tuple_vec3(self.frame.vertices[tri_idx * 3 + 0].pos),
-            tuple_vec3(self.frame.vertices[tri_idx * 3 + 1].pos),
-            tuple_vec3(self.frame.vertices[tri_idx * 3 + 2].pos),
-            tuple_vec2(self.frame.vertices[tri_idx * 3 + 0].texc),
-            tuple_vec2(self.frame.vertices[tri_idx * 3 + 1].texc),
-            tuple_vec2(self.frame.vertices[tri_idx * 3 + 2].texc),
+            &self.frame.textures[v0.texid as usize],
+            tuple_vec3(v0.pos), tuple_vec3(v1.pos), tuple_vec3(v2.pos),
+            tuple_vec2(v0.texc), tuple_vec2(v1.texc), tuple_vec2(v2.texc),
             intxn)
         } else {
-          if v.texc == (0.0, 0.0) {
+          if v0.texc == (0.0, 0.0) {
             // Mirror
-            if v.mirror { rate = 0.8; }
+            if v0.mirror { rate = 0.8; }
             // White stuff
             glm::vec3(1.0, 1.0, 1.0)
-          } else if v.texc.0 < 0.0 {
+          } else if v0.texc.0 < 0.0 {
             // Glass
             rate = 0.9;
-            glm::vec3(v.texc.1, 1.0 - (1.0 - v.texc.1) / 2.0, 1.0)
+            glm::vec3(v0.texc.1, 1.0 - (1.0 - v0.texc.1) / 2.0, 1.0)
           } else {
             // Coloured
-            glm::vec3(v.texc.0, v.texc.1, (v.texc.0 + v.texc.1) * 0.3)
+            glm::vec3(v0.texc.0, v0.texc.1, (v0.texc.0 + v0.texc.1) * 0.3)
           }
         };
       albedo * self.ray_colour(intxn, refl, w * rate)
@@ -370,19 +366,29 @@ fn lambertian(n: glm::Vec3) -> glm::Vec3 {
   p * x + q * y + n * z
 }
 
+fn tri_interpolate<T>(
+  p0: glm::Vec3, p1: glm::Vec3, p2: glm::Vec3,
+  v0: T, v1: T, v2: T,
+  q: glm::Vec3,
+) -> T
+  where T: std::ops::Mul<f32, Output = T> + std::ops::Add<T, Output = T>
+{
+  let i0 = q - p0;
+  let i1 = q - p1;
+  let i2 = q - p2;
+  let a0 = glm::length(glm::cross(i1, i2));
+  let a1 = glm::length(glm::cross(i2, i0));
+  let a2 = glm::length(glm::cross(i0, i1));
+  (v0 * a0 + v1 * a1 + v2 * a2) * (1.0 / (a0 + a1 + a2))
+}
+
 fn tex_sample(
   tex: &(u32, u32, Vec<u8>),
   p0: glm::Vec3, p1: glm::Vec3, p2: glm::Vec3,
   t0: glm::Vec2, t1: glm::Vec2, t2: glm::Vec2,
   q: glm::Vec3,
 ) -> glm::Vec3 {
-  let i0 = q - p0;
-  let i1 = q - p1;
-  let i2 = q - p2;
-  let a0 = glm::ext::sqlength(glm::cross(i1, i2));
-  let a1 = glm::ext::sqlength(glm::cross(i2, i0));
-  let a2 = glm::ext::sqlength(glm::cross(i0, i1));
-  let texc = (t0 * a0 + t1 * a1 + t2 * a2) / (a0 + a1 + a2);
+  let texc = tri_interpolate(p0, p1, p2, t0, t1, t2, q);
   let texc = texc * glm::vec2(tex.0 as f32, tex.1 as f32);
 
   let buf = &tex.2;
