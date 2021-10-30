@@ -254,7 +254,7 @@ impl<'a> RayTracer<'a> {
           glm::normalize(dir),
           glm::normalize(norm),
           refr_index)
-      } else if self.frame.vertices[tri_idx * 3].mirror {
+      } else if v0.refr != 0.0 || v0.mirror {
         // Specular reflection
         glm::reflect(dir, norm)
       } else {
