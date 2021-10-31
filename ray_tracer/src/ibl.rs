@@ -177,7 +177,7 @@ impl IBL {
         "ibl/rad_posx_2_64x64.hdr",
         "ibl/rad_posx_3_32x32.hdr",
         "ibl/rad_posx_4_16x16.hdr",
-        "ibl/rad_posx_5_8x8.hdr", // XXX: artefacts?
+        "ibl/rad_posx_5_8x8.hdr",
       ]),
       brdf_lut,
     }
@@ -238,7 +238,8 @@ fn load_hdr_cubemap(
       let md = decoder.metadata();
       let (w, h) = (md.width, md.height);
       let buf = decoder.read_image_hdr()
-        .expect(&format!("file {} is not a proper HDR file", file)).as_ptr();
+        .expect(&format!("file {} is not a proper HDR file", file));
+      let buf = buf.as_ptr();
       gl::TexImage2D(
         gl::TEXTURE_CUBE_MAP_POSITIVE_X + face_index as u32,
         mipmap_level as gl::int,

@@ -620,6 +620,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
       gl::Disable(gl::BLEND);
+      gl::Enable(gl::TEXTURE_CUBE_MAP_SEAMLESS);
 
       // Skybox
       gl::UseProgram(skybox_prog);
