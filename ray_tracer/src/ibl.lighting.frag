@@ -14,127 +14,78 @@ const vec3 light_colour = vec3(0.6) * 50;
 
 // Implementation courtesy of https://learnopengl.com/
 const float PI = 3.14159265359;
+float sq(float x) { return x * x; }
 
-// ----------------------------------------------------------------------------
-float DistributionGGX(vec3 N, vec3 H, float roughness)
-{
-  float a = roughness*roughness;
-  float a2 = a*a;
-  float NdotH = max(dot(N, H), 0.0);
-  float NdotH2 = NdotH*NdotH;
-
-  float nom   = a2;
-  float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-  denom = PI * denom * denom;
-
-  return nom / denom;
+float D_GGX(float NdotH, float a) {
+  return
+    a * a /
+    (PI * sq(sq(NdotH) * (a*a - 1) + 1));
 }
-// ----------------------------------------------------------------------------
-float GeometrySchlickGGX(float NdotV, float roughness)
-{
-  float r = (roughness + 1.0);
-  float k = (r*r) / 8.0;
 
-  float nom   = NdotV;
-  float denom = NdotV * (1.0 - k) + k;
+float G_Smith_Schlick(float NdotV, float NdotL, float a) {
+  float k = sq(a + 1) / 8;
+  return
+    (NdotL / (NdotL * (1-k) + k)) *
+    (NdotV / (NdotV * (1-k) + k));
+}
 
-  return nom / denom;
+vec3 F_Schlick(vec3 F0, float cosTheta) {
+  return F0 + (1 - F0) * pow(1 - cosTheta, 5);
 }
-// ----------------------------------------------------------------------------
-float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
-{
-  float NdotV = max(dot(N, V), 0.0);
-  float NdotL = max(dot(N, L), 0.0);
-  float ggx2 = GeometrySchlickGGX(NdotV, roughness);
-  float ggx1 = GeometrySchlickGGX(NdotL, roughness);
 
-  return ggx1 * ggx2;
-}
-// ----------------------------------------------------------------------------
-vec3 fresnelSchlick(float cosTheta, vec3 F0)
-{
-  return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
-{
-  return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(1.0 - cosTheta, 5.0);
+vec3 F_Schlick_Lagarde(vec3 F0, float cosTheta, float roughness) {
+  return F0 + (max(vec3(1 - roughness), F0) - F0) * pow(1 - cosTheta, 5);
 }
 
 void main() {
   vec3 albedo = vec3(0.9, 0.8, 0.5);
-  float ao = 0.5;
+  float AO = 0.5;
 
   vec3 N = f_normal;
   vec3 V = normalize(cam_pos - f_pos);
   vec3 R = reflect(-V, N);
+  float NdotV = max(dot(N, V), 0);
 
-  // calculate reflectance at normal incidence; if dia-electric (like plastic) use F0
-  // of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)
-  vec3 F0 = vec3(0.04);
-  F0 = mix(F0, albedo, metallic);
+  vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-  // reflectance equation
-  vec3 Lo = vec3(0.0);
+  // Outgoing radiance
+  vec3 Lo = vec3(0);
 
-  // calculate per-light radiance
-  vec3 L = normalize(light_pos - f_pos);
-  vec3 H = normalize(V + L);
-  float dist = length(light_pos - f_pos);
-  float attenuation = 1.0 / (dist * dist);
-  vec3 radiance = light_colour * attenuation;
+  // Direct lighting
+  {
+    vec3 L_unnorm = light_pos - f_pos;
+    vec3 L = normalize(L_unnorm);
+    vec3 H = normalize(V + L);
+    float NdotL = max(dot(N, L), 0);
+    float NdotH = max(dot(N, H), 0);
+    float HdotV = max(dot(H, V), 0);
 
-  // Cook-Torrance BRDF
-  float NDF = DistributionGGX(N, H, roughness);
-  float G   = GeometrySmith(N, V, L, roughness);
-  vec3 F  = fresnelSchlick(max(dot(H, V), 0.0), F0);
+    vec3 kS = F_Schlick(F0, HdotV);
+    float D = D_GGX(NdotH, roughness * roughness);
+    float G = G_Smith_Schlick(NdotV, NdotL, roughness);
 
-  vec3 numerator  = NDF * G * F;
-  float denominator = 4 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001; // + 0.0001 to prevent divide by zero
-  vec3 specular = numerator / denominator;
+    vec3 kD = (1 - kS) * (1 - metallic);
+    vec3 BRDF =
+      kD * albedo / PI +
+      kS * D * G / (4 * NdotV * NdotL + 1e-5);
+    vec3 Li = light_colour / dot(L_unnorm, L_unnorm);
+    Lo += BRDF * Li * NdotL;
+  }
 
-  // kS is equal to Fresnel
-  vec3 kS = F;
-  // for energy conservation, the diffuse and specular light can't
-  // be above 1.0 (unless the surface emits light); to preserve this
-  // relationship the diffuse component (kD) should equal 1.0 - kS.
-  vec3 kD = vec3(1.0) - kS;
-  // multiply kD by the inverse metalness such that only non-metals
-  // have diffuse lighting, or a linear blend if partly metal (pure metals
-  // have no diffuse light).
-  kD *= 1.0 - metallic;
+  // Ambient lighting
+  {
+    vec3 kS = F_Schlick_Lagarde(F0, NdotV, roughness);
+    vec3 kD = (1 - kS) * (1 - metallic);
 
-  // scale light by NdotL
-  float NdotL = max(dot(N, L), 0.0);
+    vec3 radiance = textureLod(radiance_map, R, roughness * 5).rgb;
+    vec2 LUT = texture(brdf_lut, vec2(NdotV, roughness)).rg;
 
-  // add to outgoing radiance Lo
-  Lo += (kD * albedo / PI + specular) * radiance * NdotL;  // note that we already multiplied the BRDF by the Fresnel (kS) so we won't multiply by kS again
+    vec3 ambient =
+      kD * texture(irradiance_map, N).rgb * albedo +
+      radiance * (kS * LUT.x + LUT.y);
+    Lo += ambient * AO;
+  }
 
-  // ambient lighting (we now use IBL as the ambient term)
-  kS = fresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness);
-  kD = 1.0 - kS;
-  kD *= 1.0 - metallic;
-  vec3 irradiance = texture(irradiance_map, N).rgb;
-  vec3 diffuse    = irradiance * albedo;
-
-  // sample both the pre-filter map and the BRDF lut and combine them together as per the Split-Sum approximation to get the IBL specular part.
-  const float MAX_REFLECTION_LOD = 5.0;
-  vec3 prefilteredColor = textureLod(radiance_map, R,  roughness * MAX_REFLECTION_LOD).rgb;
-  vec2 brdf  = texture(brdf_lut, vec2(max(dot(N, V), 0.0), roughness)).rg;
-  specular = prefilteredColor * (F * brdf.x + brdf.y);
-
-  vec3 ambient = (kD * diffuse + specular) * ao;
-
-  vec3 color = ambient + Lo;
-
-  // HDR tonemapping
-  color = color / (color + vec3(1.0));
-  // gamma correct
-  color = pow(color, vec3(1.0/2.2));
-    
-  out_colour = vec4(color, 1);
-/*
-  out_colour.r = max(dot(N, L), 0.0);
-  out_colour.g = max(dot(N, V), 0.0);
-  out_colour.b = 0;
-*/
+  vec3 k = Lo / (Lo + 1); // Tone mapping
+  out_colour = vec4(pow(k, vec3(1/2.2)), 1);
 }
