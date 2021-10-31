@@ -1,5 +1,5 @@
 use crate::scene_loader;
-use rand::{Rng, seq::SliceRandom};
+use rand::seq::SliceRandom;
 
 pub struct RayTracer<'a> {
   w: u32,

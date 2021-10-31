@@ -66,7 +66,7 @@ pub fn load<P: AsRef<std::path::Path>>(p: P)
       let (mat_idx, texid) = *mtl_lookup.get(
         geom.material_name.as_ref().ok_or("no material")?
       ).ok_or("unknown material")?;
-      let mat = &mtl[mat_idx];
+      let _mat = &mtl[mat_idx];
       for shape in &geom.shapes {
         if let obj::Primitive::Triangle(
           (vi0, Some(ti0), Some(ni0)),

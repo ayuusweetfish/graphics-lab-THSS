@@ -184,8 +184,11 @@ impl IBL {
   }
 
   pub fn skybox(&self) -> gl::uint { self.skybox }
+  #[allow(dead_code)]
   pub fn irradiance_map(&self) -> gl::uint { self.irradiance_map }
+  #[allow(dead_code)]
   pub fn radiance_map(&self) -> gl::uint { self.radiance_map }
+  #[allow(dead_code)]
   pub fn brdf_lut(&self) -> gl::uint { self.brdf_lut }
 
   pub fn draw(

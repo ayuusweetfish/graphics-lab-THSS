@@ -4,7 +4,6 @@ mod ibl;
 mod ray_tracer;
 
 use glfw::Context;
-use image::GenericImageView;
 
 use core::mem::{size_of, size_of_val};
 
@@ -238,7 +237,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
   // Load textures
   let mut scene_texs = vec![];
-  for (i, (w, h, buf)) in frame.textures.iter().enumerate() {
+  for (w, h, buf) in &frame.textures {
     let mut mat_tex = 0;
     gl::GenTextures(1, &mut mat_tex);
     gl::BindTexture(gl::TEXTURE_2D, mat_tex);
