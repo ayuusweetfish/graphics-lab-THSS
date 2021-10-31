@@ -468,6 +468,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   window.set_sticky_keys(true);
   let mut last_cursor = window.get_cursor_pos();
 
+  let keys_list = [
+    glfw::Key::W, glfw::Key::Up,
+    glfw::Key::S, glfw::Key::Down,
+    glfw::Key::A, glfw::Key::Left,
+    glfw::Key::D, glfw::Key::Right,
+    glfw::Key::Q,
+    glfw::Key::Z,
+    glfw::Key::Num1,
+    glfw::Key::Num2,
+    glfw::Key::Num3,
+    glfw::Key::Num4,
+    glfw::Key::Num0,
+  ];
+
   while !window.should_close() {
     window.swap_buffers();
 
@@ -507,6 +521,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       raytrace_on = !raytrace_on;
       if raytrace_on {
         rt.reset(cam_pos, cam_ori, cam_up, 0.5236, 10.0);
+      } else {
+        // Clear sticky key flags
+        for k in keys_list { window.get_key(k); }
       }
     }
     last_raytrace_key_press = raytrace_key_press;
@@ -590,6 +607,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       }
       last_scene_key_press = scene_key_press;
     }
+    // Clear sticky key flags
+    for k in keys_list { window.get_key(k); }
 
     if !raytrace_on || !rt.frame_filled() {
       // Camera matrix
