@@ -22,7 +22,7 @@ float D_GGX(float NdotH, float a) {
     (PI * sq(sq(NdotH) * (a*a - 1) + 1));
 }
 
-float G_Smith_Schlick(float NdotV, float NdotL, float a) {
+float G_Smith_Schlick_Analytic(float NdotV, float NdotL, float a) {
   float k = sq(a + 1) / 8;
   return
     (NdotL / (NdotL * (1-k) + k)) *
@@ -62,7 +62,7 @@ void main() {
 
     vec3 kS = F_Schlick(F0, HdotV);
     float D = D_GGX(NdotH, roughness * roughness);
-    float G = G_Smith_Schlick(NdotV, NdotL, roughness);
+    float G = G_Smith_Schlick_Analytic(NdotV, NdotL, roughness);
 
     vec3 kD = (1 - kS) * (1 - metallic);
     vec3 BRDF =
