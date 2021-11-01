@@ -600,6 +600,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rabbit_hole"
+version = "0.1.0"
+dependencies = [
+ "bvh",
+ "gl_generator",
+ "glfw",
+ "glm",
+ "image",
+ "rand 0.8.4",
+ "relative-path",
+ "wavefront_obj",
+]
+
+[[package]]
 name = "rand"
 version = "0.3.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -756,20 +770,6 @@ name = "ryu"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71d301d4193d031abdd79ff7e3dd721168a9572ef3fe51a1517aba235bd8f86e"
-
-[[package]]
-name = "scene"
-version = "0.1.0"
-dependencies = [
- "bvh",
- "gl_generator",
- "glfw",
- "glm",
- "image",
- "rand 0.8.4",
- "relative-path",
- "wavefront_obj",
-]
 
 [[package]]
 name = "scoped_threadpool"
