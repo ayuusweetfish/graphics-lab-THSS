@@ -1,26 +1,45 @@
+# Physically Based Rendering and Ray Tracer
+
+## PBR
+
+![PBR IBL 1](images/pbr-ibl-1.jpg)
+![PBR IBL 2](images/pbr-ibl-2.jpg)
+
+## Path tracer
+
+![Path tracer scene](images/rt.jpg)
+
+## Notes
+
+[Squirrel model](https://free3d.com/3d-model/squirrel-v2--389774.html)
+by **printable_models** on Free3D.
+
+Environment map from [NoEmotion HDRs](http://noemotionhdrs.net/hdrother.html).
+Preprocess with [cmft](https://github.com/dariomanesku/cmft).
+
 Generate skybox:
 ```sh
-_build/osx64_clang/bin/cmftRelease \
-  --input ~/Downloads/11-13_Forest_D_scaled.hdr \
+cmft \
+  --input 11-13_Forest_D_scaled.hdr \
   --outputNum 1 \
-  --output0 ~/Downloads/skybox \
+  --output0 skybox \
   --output0params hdr,rgbe,facelist
 ```
 
 Generate irradiance map:
 ```sh
-_build/osx64_clang/bin/cmftRelease \
-  --input ~/Downloads/11-13_Forest_D_scaled.hdr \
+cmft \
+  --input 11-13_Forest_D_scaled.hdr \
   --filter irradiance \
   --outputNum 1 \
-  --output0 ~/Downloads/irrad \
+  --output0 irrad \
   --output0params hdr,rgbe,facelist
 ```
 
 Generate radiance map:
 ```sh
-_build/osx64_clang/bin/cmftRelease \
-  --input ~/Downloads/11-13_Forest_D_scaled.hdr \
+cmft \
+  --input 11-13_Forest_D_scaled.hdr \
   --filter radiance \
   --srcFaceSize 256 \
   --excludeBase false \
@@ -40,6 +59,6 @@ _build/osx64_clang/bin/cmftRelease \
   --outputGammaDenominator 1.0 \
   --generateMipChain false \
   --outputNum 2 \
-  --output0 ~/Downloads/rad \
+  --output0 rad \
   --output0params hdr,rgbe,facelist
 ```
