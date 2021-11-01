@@ -68,8 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   window.make_current();
 
   // Load scene
-  let frame = scene_loader::load("trees2/trees2.obj")?;
-  // let frame = scene_loader::load("test1.obj")?;
+  let frame = scene_loader::load("model/trees2.obj")?;
 
   // IBL
   let (start, end) = *frame.object_range.get("Metal_Icosphere")
