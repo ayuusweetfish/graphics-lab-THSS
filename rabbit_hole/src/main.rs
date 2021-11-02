@@ -136,6 +136,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   let scene_prog = program(r"
     #version 330 core
     uniform mat4 VP;
+    uniform int mode; // 0 - opaque, 1 - semi-transparent
     layout (location = 0) in vec3 v_pos;
     layout (location = 1) in vec3 v_normal;
     layout (location = 2) in vec2 v_texcoord;
@@ -147,6 +148,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     void main() {
       gl_Position = VP * vec4(v_pos, 1.0);
+      if ((mode == 1) != (v_texcoord.x == -1))
+        gl_Position.xyz = vec3(1e5);
       f_pos = v_pos;
       f_normal = v_normal;
       f_texcoord = v_texcoord;
@@ -177,6 +180,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       float spec = 0.3 * pow(max(dot(n, h), 0.0), 16);
 
       out_colour = vec4(ambient_colour + (diff + spec) * light_colour, 1.0);
+      if (f_texcoord.r < 0) { // Glass
+        out_colour.rgb = vec3(1) - (vec3(1) - out_colour.rgb) * 0.5;
+        out_colour.rgb *= vec3(0.45, 0.5, 0.6);
+        out_colour.a = 0.4 + 0.4 * sqrt(1 - pow(dot(view_dir, n), 2));
+      }
       if (f_texid < 16)
         out_colour *= texture(textures[int(f_texid + 0.5)], f_texcoord);
       else if (f_texcoord.r > 0)
@@ -188,6 +196,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
   // Uniform locations
   let scene_uni_vp = gl::GetUniformLocation(scene_prog, "VP\0".as_ptr().cast());
+  let scene_uni_mode = gl::GetUniformLocation(scene_prog, "mode\0".as_ptr().cast());
   let scene_uni_light_pos = gl::GetUniformLocation(scene_prog, "light_pos\0".as_ptr().cast());
   let scene_uni_cam_pos = gl::GetUniformLocation(scene_prog, "cam_pos\0".as_ptr().cast());
   // Textures
@@ -671,10 +680,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Draw
         gl::BindVertexArray(scene_vao);
         gl::BindBuffer(gl::ARRAY_BUFFER, scene_vbo);
+        // (1) Opaque objects
+        gl::Uniform1i(scene_uni_mode, 0);
         gl::DepthFunc(gl::LESS);
+        gl::DrawArrays(gl::TRIANGLES, 0, frame.vertices.len() as gl::int);
+        // (2) Semi-transparent objects
+        gl::Uniform1i(scene_uni_mode, 1);
+        // gl::Disable(gl::CULL_FACE);
+        gl::Enable(gl::BLEND);
+        gl::BlendEquation(gl::FUNC_ADD);
+        gl::BlendFunc(gl::ONE, gl::ONE_MINUS_SRC_ALPHA);
         gl::DrawArrays(gl::TRIANGLES, 0, frame.vertices.len() as gl::int);
       }
 
+      // gl::Enable(gl::CULL_FACE);
+      gl::Disable(gl::BLEND);
       gl::DepthFunc(gl::LEQUAL);
       ibl.draw(vp, cam_pos, light_pos, metallic, roughness);
 
