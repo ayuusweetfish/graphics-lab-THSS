@@ -194,7 +194,9 @@ impl<'a> RayTracer<'a> {
         let i = (y * self.w + x) as usize;
         for ch in 0..3 {
           self.ibuf[i * 4 + ch] =
-            (self.cbuf[i][ch].powf(1.0/2.2) * 255.99) as u8;
+            (self.cbuf[i][ch].powf(1.0/2.2).min(1.0) * 255.99) as u8;
+            // For denoising
+            // (self.cbuf[i][ch].min(1.0) * 255.99) as u8;
         }
         self.ibuf[i * 4 + 3] = 255;
       }
@@ -222,7 +224,8 @@ impl<'a> RayTracer<'a> {
     if self.debug {
       println!("{:?} - {:?}", cen.as_array(), glm::normalize(dir).as_array());
     }
-    if let Some((tri_idx, intxn)) = self.collide(cen, dir) {
+    if let Some((tri_idx, t)) = self.collide(cen, dir) {
+      let intxn = cen + dir * t;
       let v0 = &self.frame.vertices[tri_idx * 3 + 0];
       let v1 = &self.frame.vertices[tri_idx * 3 + 1];
       let v2 = &self.frame.vertices[tri_idx * 3 + 2];
@@ -233,6 +236,8 @@ impl<'a> RayTracer<'a> {
       let side_in = glm::dot(dir, norm) < 0.0;
       // The normal may need to be flipped
       let norm = if side_in { norm } else { -norm };
+      // For denoising
+      // return norm * 0.5 + glm::vec3(0.5, 0.5, 0.5);
       // Reflect or refract?
       let refr_index = v0.refr;
       let refr_index = if side_in { 1.0 / refr_index } else { refr_index };
@@ -289,8 +294,39 @@ impl<'a> RayTracer<'a> {
             glm::vec3(v0.texc.0, v0.texc.1, (v0.texc.0 + v0.texc.1) * 0.3)
           }
         };
-      albedo * self.ray_colour(intxn, refl, w * rate)
+      // For denoising
+      // return albedo;
+      let local_illum_on = false; // XXX: Toggle me
+      if local_illum_on {
+        // Local illumination
+        let light_pos = glm::vec3(4.0, -1.0, 6.0);
+        let shadowed = {
+          let to_light = glm::normalize(light_pos - intxn);
+          if let Some((_, t)) = self.collide(intxn, to_light) {
+            let block_intxn = intxn + to_light * t;
+            t * t < glm::ext::sqlength(intxn - block_intxn)
+          } else {
+            false
+          }
+        };
+        let k_local = if v0.mirror || v0.texc.0 < 0.0 { 0.05 } else { 0.4 };
+        let blinn_phong = if shadowed {
+          glm::vec3(0.0, 0.0, 0.0)
+        } else {
+          let h = glm::normalize((-dir) + (light_pos - intxn));
+          glm::vec3(0.6, 0.6, 0.6) * glm::dot(norm, h).max(0.0).powi(4)
+        };
+        // Final mix
+        albedo * (
+          blinn_phong * (w * k_local) +
+          self.ray_colour(intxn, refl, rate * w * (1.0 - k_local))
+        )
+      } else {
+        albedo * self.ray_colour(intxn, refl, rate * w)
+      }
     } else {
+      // For denoising
+      // return dir * 0.5 + glm::vec3(0.5, 0.5, 0.5);
       let angle = glm::normalize(dir).y * 0.5 + 0.5;
       glm::vec3(0.6, 0.6 + angle * 0.1, 0.6 + angle * 0.2) * w
     }
@@ -298,20 +334,20 @@ impl<'a> RayTracer<'a> {
 
   // Finds the nearest colliding triangle
   // Returns the index and point of intersection
-  fn collide(&self, cen: glm::Vec3, dir: glm::Vec3) -> Option<(usize, glm::Vec3)> {
+  fn collide(&self, cen: glm::Vec3, dir: glm::Vec3) -> Option<(usize, f32)> {
     let ray = bvh::ray::Ray::new(
       (cen[0], cen[1], cen[2]).into(),
       (dir[0], dir[1], dir[2]).into());
     let mut best = (f32::INFINITY, None);
     for tri in self.bvh.traverse_iterator(&ray, &self.tris) {
-      if let Some((p, t)) = ray_tri_intersect(
+      if let Some(t) = ray_tri_intersect(
         cen, dir,
         tuple_vec3(self.frame.vertices[tri.index * 3 + 0].pos),
         tuple_vec3(self.frame.vertices[tri.index * 3 + 1].pos),
         tuple_vec3(self.frame.vertices[tri.index * 3 + 2].pos),
       ) {
         if t < best.0 {
-          best = (t, Some((tri.index, p)));
+          best = (t, Some((tri.index, t)));
         }
       }
     }
@@ -326,7 +362,7 @@ fn tuple_vec3(p: (f32, f32, f32)) -> glm::Vec3 { glm::vec3(p.0, p.1, p.2) }
 fn ray_tri_intersect(
   cen: glm::Vec3, dir: glm::Vec3,
   p0: glm::Vec3, p1: glm::Vec3, p2: glm::Vec3,
-) -> Option<(glm::Vec3, f32)> {
+) -> Option<f32> {
   let eps = 1e-5;
   let e1 = p1 - p0;
   let e2 = p2 - p0;
@@ -342,7 +378,7 @@ fn ray_tri_intersect(
   if v < 0.0 || u + v > 1.0 { return None; }
   let t = f * glm::dot(e2, q);
   if t > eps {
-    Some((cen + dir * t, t))
+    Some(t)
   } else {
     None
   }
