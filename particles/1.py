@@ -6,7 +6,9 @@ dt = 1.0 / 600
 R = 0.1
 G = 0.4
 
-K = 100
+Ks = 100
+Eta = 1
+Kt = 1
 
 N = 11
 x = ti.Vector.field(3, float, (N,))
@@ -32,7 +34,13 @@ def step():
       d = (x[i] - x[j]).norm()
       if d < R:
         # Repulsive
-        f[i] += K * (R * 2 - d) * (x[i] - x[j]).normalized()
+        dirUnit = (x[i] - x[j]).normalized()
+        f[i] += Ks * (R * 2 - d) * dirUnit
+        # Damping
+        relVel = v[j] - v[i]
+        f[i] += Eta * relVel
+        # Shear
+        f[i] += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
   for i in range(N):
     v[i] += f[i] * 0.2 * dt
   # Integrate
