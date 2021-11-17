@@ -4,9 +4,9 @@ ti.init(arch=ti.vulkan)
 
 dt = 1.0 / 600
 R = 0.1
-G = 0.4
+G = 0.8
 
-Ks = 200
+Ks = 300
 Eta = 1
 Kt = 1
 
