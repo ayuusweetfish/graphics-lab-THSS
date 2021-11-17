@@ -41,6 +41,15 @@ def init():
     bodyVel[i] = ti.Vector([-0.2, ti.random() * 0.5, 0])
     bodyAng[i] = ti.Vector([0, 0, 0])
     bodyOri[i] = ti.Vector([0, 0, 0, 1])
+    # Inverse inertia
+    ine = ti.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+    for j in range(i * 3, i * 3 + 3):
+      m = 5
+      for p, q in ti.static(ti.ndrange(3, 3)):
+        ine[p, q] -= m * x0[j][p] * x0[j][q]
+        if p == q:
+          ine[p, q] += m * x0[j].norm() ** 2
+    bodyIne[i] = ine.inverse()
 
 @ti.func
 def quat_mul(a, b):
