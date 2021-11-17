@@ -7,15 +7,13 @@ R = 0.1
 G = 0.8
 
 Ks = 300
-Eta = 1
+Eta = 30  # 1
 Kt = 1
 
 N = 33
 x0 = ti.Vector.field(3, float, (N,))
 x = ti.Vector.field(3, float, (N,))
 v = ti.Vector.field(3, float, (N,))
-f = ti.Vector.field(3, float, (N,))
-body = ti.field(int, (N,))
 
 M = 11
 bodyIdx = ti.Vector.field(2, int, (M,))   # (start, end)
@@ -33,9 +31,6 @@ def init():
     x0[i * 3 + 0] = ti.Vector([R * 0.1, -R * 0.9, 0])
     x0[i * 3 + 1] = ti.Vector([0, 0, 0])
     x0[i * 3 + 2] = ti.Vector([-R * 0.1, R * 0.9, 0])
-    body[i * 3 + 0] = i
-    body[i * 3 + 1] = i
-    body[i * 3 + 2] = i
     bodyPos[i] = ti.Vector([-0.5 + R * 0.9 * i, R * 0.2 * i + R, 0])
     bodyIdx[i] = ti.Vector([i * 3, i * 3 + 3])
     bodyVel[i] = ti.Vector([-0.2, ti.random() * 0.5, 0])
@@ -89,53 +84,49 @@ def step():
       x[j] = bodyPos[i] + r
       v[j] = bodyVel[i] + bodyAng[i].cross(r)
 
-  # Force
-  for i in range(M): f[i] = ti.Vector([0, 0, 0])
   # Collision
-  for i in range(N):
-    f[i] = ti.Vector([0, 0, 0])
-    for j in range(N):
-      if body[i] == body[j]: continue
-      d = (x[i] - x[j]).norm()
-      if d < R:
-        # Repulsive
-        dirUnit = (x[i] - x[j]).normalized()
-        f[i] += Ks * (R * 2 - d) * dirUnit
-        # Damping
-        relVel = v[j] - v[i]
-        f[i] += Eta * relVel
-        # Shear
-        f[i] += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
-    # Impulse from boundaries
-    if x[i].y < -0.5 + R and v[i].y < 0:
-      f[i].y += -v[i].y / (0.2 * dt) * 2
-    if ((x[i].x < -0.8 + R and v[i].x < 0) or
-        (x[i].x >  0.8 - R and v[i].x > 0)):
-      f[i].x += -v[i].x / (0.2 * dt) * 2
-
-  # Integrate
-  for i in range(M):
+  for b in range(M):
     fSum = ti.Vector([0.0, 0.0, 0.0])
     tSum = ti.Vector([0.0, 0.0, 0.0])
-    # for j in range(bodyIdx[i][0], bodyIdx[i][1]):
-    # Crash?
-    j = bodyIdx[i][0]
-    while j < bodyIdx[i][1]:
-      fSum += f[j]
-      tSum += (x[j] - bodyPos[i]).cross(f[j])
-      j += 1
-    bodyVel[i] += fSum * 0.2 * dt
-    bodyPos[i] += bodyVel[i] * dt
+    boundaryBounced = False
+    for i in range(bodyIdx[b][0], bodyIdx[b][1]):
+      f = ti.Vector([0.0, 0.0, 0.0])
+      for j in range(N):
+        if j >= bodyIdx[b][0] and j < bodyIdx[b][1]: continue
+        d = (x[i] - x[j]).norm()
+        if d < R:
+          # Repulsive
+          dirUnit = (x[i] - x[j]).normalized()
+          f += Ks * (R * 2 - d) * dirUnit
+          # Damping
+          relVel = v[j] - v[i]
+          f += Eta * relVel
+          # Shear
+          f += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
+      # Impulse from boundaries
+      if not boundaryBounced:
+        if x[i].y < -0.5 + R and v[i].y < 0:
+          f.y += -v[i].y / (0.2 * dt) * 1.5  # 2
+          boundaryBounced = True
+        if ((x[i].x < -0.8 + R and v[i].x < 0) or
+            (x[i].x >  0.8 - R and v[i].x > 0)):
+          f.x += -v[i].x / (0.2 * dt) * 1.5  # 2
+          boundaryBounced = True
+      fSum += f
+      tSum += (x[i] - bodyPos[b]).cross(f)
+
+    bodyVel[b] += fSum * 0.2 * dt
+    bodyPos[b] += bodyVel[b] * dt
     # Update angular momentum
-    bodyAng[i] += tSum * dt
-    rotMat = quat_mat(bodyOri[i])
-    angVel = (rotMat * bodyIne[i] * rotMat.transpose()).__matmul__(bodyAng[i])
-    if bodyAng[i].norm() >= 1e-5:
-      theta = bodyAng[i].norm() * dt
+    bodyAng[b] += tSum * dt
+    rotMat = quat_mat(bodyOri[b])
+    angVel = (rotMat * bodyIne[b] * rotMat.transpose()).__matmul__(bodyAng[b])
+    if bodyAng[b].norm() >= 1e-5:
+      theta = bodyAng[b].norm() * dt
       dqw = ti.cos(theta / 2)
-      dqv = ti.sin(theta / 2) * bodyAng[i].normalized()
+      dqv = ti.sin(theta / 2) * bodyAng[b].normalized()
       dq = ti.Vector([dqv.x, dqv.y, dqv.z, dqw])
-      bodyOri[i] = quat_mul(dq, bodyOri[i])
+      bodyOri[b] = quat_mul(dq, bodyOri[b])
 
 @ti.kernel
 def frame():
