@@ -3,13 +3,14 @@ import taichi_glsl as ts
 ti.init(arch=ti.vulkan)
 
 dt = 1.0 / 600
-R = 0.1
+R = 0.05
 G = 1.5
 
-Ks = 300
-Eta = 30  # 1
+Ks = 3000
+Eta = 60  # 1
 Kt = 1
 Mu = 0.2
+KsB = 10000
 
 N = 33
 x0 = ti.Vector.field(3, float)
@@ -36,10 +37,10 @@ count = ti.field(float, ())
 @ti.kernel
 def init():
   for i in range(M):
-    x0[i * 3 + 0] = ti.Vector([R * 0.4, -R * 0.7, 0])
+    x0[i * 3 + 0] = ti.Vector([R * 0.8, -R * 1.4, 0])
     x0[i * 3 + 1] = ti.Vector([0, 0, 0])
-    x0[i * 3 + 2] = ti.Vector([-R * 0.4, R * 0.7, 0])
-    bodyPos[i] = ti.Vector([-0.5 + R * 0.9 * i, R * 0.2 * i + R, 0])
+    x0[i * 3 + 2] = ti.Vector([-R * 0.8, R * 1.4, 0])
+    bodyPos[i] = ti.Vector([-0.5 + R * 1.8 * i, R * 0.4 * i + R, 0])
     bodyIdx[i] = ti.Vector([i * 3, i * 3 + 3])
     bodyVel[i] = ti.Vector([-0.2, ti.random() * 0.5, 0])
     bodyAcc[i] = ti.Vector([0, 0, 0])
@@ -108,7 +109,7 @@ def step():
       for j in range(N):
         if j >= bodyIdx[b][0] and j < bodyIdx[b][1]: continue
         d = (x[i] - x[j]).norm()
-        if d < R:
+        if d < R * 2:
           # Repulsive
           dirUnit = (x[i] - x[j]).normalized()
           f += Ks * (R * 2 - d) * dirUnit
@@ -134,13 +135,14 @@ def step():
     if boundaryX != 0:
       i = boundaryXPart
       impF = ti.Vector([0.0, 0.0, 0.0])
-      impF.x = -boundaryX / (0.2 * dt) * 1.2  # 2
+      impF.x = -boundaryX * bodyMas[b] / dt * 1.2 # 2
       fSum += impF
       tSum += (x[i] - bodyPos[b]).cross(impF)
     if boundaryY != 0:
       i = boundaryYPart
       impF = ti.Vector([0.0, 0.0, 0.0])
-      impF.y = -boundaryY / (0.2 * dt) * 1.2  # 2
+      impF.y = -boundaryY * bodyMas[b] / dt * 1.2 # 2
+      impF.y += KsB * (-0.5 + R - x[i].y)
       paraV = v[i].xz.norm()
       fricF = max(-fSum.y, 0) * Mu
       if paraV >= 1e-5:
@@ -165,6 +167,27 @@ def step():
       dq = ti.Vector([dqv.x, dqv.y, dqv.z, dqw])
       bodyOri[b] = quat_mul(dq, bodyOri[b])
 
+boundVertsL = [
+  [-0.8, -0.5, -1],
+  [ 0.8, -0.5, -1],
+  [ 0.8, -0.5,  1],
+  [-0.8, -0.5,  1],
+
+  [-0.8,  0.5, -1],
+  [ 0.8,  0.5, -1],
+  [ 0.8,  0.5,  1],
+  [-0.8,  0.5,  1],
+]
+boundInds0L = [0, 1, 2, 2, 3, 0]  # bottom
+boundInds1L = [1, 2, 5, 2, 6, 5, 0, 3, 7, 0, 7, 4]  # right, left
+boundVerts = ti.Vector.field(3, float, len(boundVertsL))
+boundInds0 = ti.field(int, len(boundInds0L))
+boundInds1 = ti.field(int, len(boundInds1L))
+import numpy as np
+boundVerts.from_numpy(np.array(boundVertsL, dtype=np.float32))
+boundInds0.from_numpy(np.array(boundInds0L, dtype=np.int32))
+boundInds1.from_numpy(np.array(boundInds1L, dtype=np.int32))
+
 init()
 
 window = ti.ui.Window('Collision', (600, 600), vsync=True)
@@ -181,6 +204,8 @@ while window.running:
 
   scene.point_light(pos=(0.5, 1, 2), color=(0.5, 0.5, 0.5))
   scene.ambient_light(color=(0.5, 0.5, 0.5))
-  scene.particles(x, radius=R, color=(0.6, 0.7, 1))
+  scene.mesh(boundVerts, indices=boundInds0, color=(0.65, 0.65, 0.5), two_sided=True)
+  scene.mesh(boundVerts, indices=boundInds1, color=(0.7, 0.68, 0.6), two_sided=True)
+  scene.particles(x, radius=R*2, color=(0.6, 0.7, 1))
   canvas.scene(scene)
   window.show()
