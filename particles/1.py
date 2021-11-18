@@ -4,48 +4,56 @@ ti.init(arch=ti.vulkan)
 
 dt = 1.0 / 600
 R = 0.1
-G = 0.8
+G = 1.5
 
 Ks = 300
 Eta = 30  # 1
 Kt = 1
 
 N = 33
-x0 = ti.Vector.field(3, float, (N,))
-x = ti.Vector.field(3, float, (N,))
-v = ti.Vector.field(3, float, (N,))
+x0 = ti.Vector.field(3, float)
+m = ti.field(float)
+x = ti.Vector.field(3, float)
+v = ti.Vector.field(3, float)
+ti.root.dense(ti.i, N).place(x0, m, x, v)
 
 M = 11
-bodyIdx = ti.Vector.field(2, int, (M,))   # (start, end)
-bodyPos = ti.Vector.field(3, float, (M,))
-bodyVel = ti.Vector.field(3, float, (M,))
-bodyIne = ti.Matrix.field(3, 3, float, (M,))
-bodyAcc = ti.Vector.field(3, float, (M,))
-bodyAng = ti.Vector.field(3, float, (M,))
-bodyOri = ti.Vector.field(4, float, (M,)) # quaternion, (x, y, z, w)
+bodyIdx = ti.Vector.field(2, int)   # (start, end)
+bodyPos = ti.Vector.field(3, float)
+bodyVel = ti.Vector.field(3, float)
+bodyMas = ti.field(float)
+bodyAcc = ti.Vector.field(3, float)
+bodyOri = ti.Vector.field(4, float)     # Rotation quaternion (x, y, z, w)
+bodyIne = ti.Matrix.field(3, 3, float)  # Inverse inertia tensor
+bodyAng = ti.Vector.field(3, float)     # Angular momentum
+ti.root.dense(ti.i, M).place(
+  bodyIdx, bodyPos, bodyVel, bodyMas, bodyAcc, bodyOri, bodyIne, bodyAng
+)
 
 count = ti.field(int, ())
 
 @ti.kernel
 def init():
   for i in range(M):
-    x0[i * 3 + 0] = ti.Vector([R * 0.1, -R * 0.9, 0])
+    x0[i * 3 + 0] = ti.Vector([R * 0.4, -R * 0.7, 0])
     x0[i * 3 + 1] = ti.Vector([0, 0, 0])
-    x0[i * 3 + 2] = ti.Vector([-R * 0.1, R * 0.9, 0])
+    x0[i * 3 + 2] = ti.Vector([-R * 0.4, R * 0.7, 0])
     bodyPos[i] = ti.Vector([-0.5 + R * 0.9 * i, R * 0.2 * i + R, 0])
     bodyIdx[i] = ti.Vector([i * 3, i * 3 + 3])
     bodyVel[i] = ti.Vector([-0.2, ti.random() * 0.5, 0])
     bodyAcc[i] = ti.Vector([0, 0, 0])
     bodyAng[i] = ti.Vector([0, 0, 0])
     bodyOri[i] = ti.Vector([0, 0, 0, 1])
-    # Inverse inertia
+    # Mass and inverse inertia tensor
+    bodyMas[i] = 0
     ine = ti.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
     for j in range(i * 3, i * 3 + 3):
-      m = 5
+      m[j] = 5
+      bodyMas[i] += m[j]
       for p, q in ti.static(ti.ndrange(3, 3)):
-        ine[p, q] -= m * x0[j][p] * x0[j][q]
+        ine[p, q] -= m[j] * x0[j][p] * x0[j][q]
         if p == q:
-          ine[p, q] += m * x0[j].norm() ** 2
+          ine[p, q] += m[j] * x0[j].norm() ** 2
     bodyIne[i] = ine.inverse()
 
 @ti.func
@@ -73,7 +81,7 @@ def quat_mat(q):
     [2*x*z - 2*w*y, 2*y*z + 2*w*x, 1 - 2*x*x - 2*y*y]
   ])
 
-@ti.func
+@ti.kernel
 def step():
   # Verlet integration pre-step
   for i in range(M):
@@ -91,7 +99,9 @@ def step():
     fSum = ti.Vector([0.0, 0.0, 0.0])
     tSum = ti.Vector([0.0, 0.0, 0.0])
     boundaryX = 0.0
+    boundaryXArm = ti.Vector([0.0, 0.0, 0.0])
     boundaryY = 0.0
+    boundaryYArm = ti.Vector([0.0, 0.0, 0.0])
     for i in range(bodyIdx[b][0], bodyIdx[b][1]):
       f = ti.Vector([0.0, 0.0, 0.0])
       for j in range(N):
@@ -107,23 +117,33 @@ def step():
           # Shear
           f += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
       # Impulse from boundaries
-      if (abs(v[i].y) > boundaryY and
+      if (abs(v[i].y) > abs(boundaryY) and
           x[i].y < -0.5 + R and v[i].y < 0):
         boundaryY = v[i].y
-      if (abs(v[i].x) > boundaryX and
+        boundaryYArm = x[i] - bodyPos[b]
+      if (abs(v[i].x) > abs(boundaryX) and
           (x[i].x < -0.8 + R and v[i].x < 0) or
           (x[i].x >  0.8 - R and v[i].x > 0)):
         boundaryX = v[i].x
+        boundaryXArm = x[i] - bodyPos[b]
+      f.y -= m[i] * G
       fSum += f
       tSum += (x[i] - bodyPos[b]).cross(f)
 
-    fSum.x += -boundaryX / (0.2 * dt) * 1.5 # 2
-    fSum.y += -boundaryY / (0.2 * dt) * 1.5 # 2
+    if boundaryX != 0:
+      impulseFX = -boundaryX / (0.2 * dt) * 1.5 # 2
+      impulseF = ti.Vector([impulseFX, 0.0, 0.0])
+      fSum += impulseF
+      tSum += boundaryXArm.cross(impulseF)
+    if boundaryY != 0:
+      impulseFY = -boundaryY / (0.2 * dt) * 1.5 # 2
+      impulseF = ti.Vector([0.0, impulseFY, 0.0])
+      fSum += impulseF
+      tSum += boundaryYArm.cross(impulseF)
 
     # Translational
     # Verlet integration post-step
-    newAcc = fSum * 0.2
-    newAcc.y -= G
+    newAcc = fSum / bodyMas[b]
     bodyVel[b] += (bodyAcc[b] + newAcc) * 0.5 * dt
     bodyAcc[b] = newAcc
     # Rotational
@@ -137,11 +157,6 @@ def step():
       dq = ti.Vector([dqv.x, dqv.y, dqv.z, dqw])
       bodyOri[b] = quat_mul(dq, bodyOri[b])
 
-@ti.kernel
-def frame():
-  for i in ti.static(range(10)):
-    step()
-
 init()
 
 window = ti.ui.Window('Collision', (600, 600), vsync=True)
@@ -150,7 +165,7 @@ scene = ti.ui.Scene()
 camera = ti.ui.make_camera()
 
 while window.running:
-  frame()
+  for i in range(10): step()
 
   camera.position(0, 0, 2)
   camera.lookat(0, 0, 0)
