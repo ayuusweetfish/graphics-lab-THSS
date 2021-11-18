@@ -90,7 +90,8 @@ def step():
   for b in range(M):
     fSum = ti.Vector([0.0, 0.0, 0.0])
     tSum = ti.Vector([0.0, 0.0, 0.0])
-    boundaryBounced = False
+    boundaryX = 0.0
+    boundaryY = 0.0
     for i in range(bodyIdx[b][0], bodyIdx[b][1]):
       f = ti.Vector([0.0, 0.0, 0.0])
       for j in range(N):
@@ -106,16 +107,18 @@ def step():
           # Shear
           f += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
       # Impulse from boundaries
-      if not boundaryBounced:
-        if x[i].y < -0.5 + R and v[i].y < 0:
-          f.y += -v[i].y / (0.2 * dt) * 1.5  # 2
-          boundaryBounced = True
-        if ((x[i].x < -0.8 + R and v[i].x < 0) or
-            (x[i].x >  0.8 - R and v[i].x > 0)):
-          f.x += -v[i].x / (0.2 * dt) * 1.5  # 2
-          boundaryBounced = True
+      if (abs(v[i].y) > boundaryY and
+          x[i].y < -0.5 + R and v[i].y < 0):
+        boundaryY = v[i].y
+      if (abs(v[i].x) > boundaryX and
+          (x[i].x < -0.8 + R and v[i].x < 0) or
+          (x[i].x >  0.8 - R and v[i].x > 0)):
+        boundaryX = v[i].x
       fSum += f
       tSum += (x[i] - bodyPos[b]).cross(f)
+
+    fSum.x += -boundaryX / (0.2 * dt) * 1.5 # 2
+    fSum.y += -boundaryY / (0.2 * dt) * 1.5 # 2
 
     # Translational
     # Verlet integration post-step
