@@ -9,6 +9,7 @@ G = 1.5
 Ks = 300
 Eta = 30  # 1
 Kt = 1
+Mu = 0.2
 
 N = 33
 x0 = ti.Vector.field(3, float)
@@ -30,7 +31,7 @@ ti.root.dense(ti.i, M).place(
   bodyIdx, bodyPos, bodyVel, bodyMas, bodyAcc, bodyOri, bodyIne, bodyAng
 )
 
-count = ti.field(int, ())
+count = ti.field(float, ())
 
 @ti.kernel
 def init():
@@ -99,9 +100,9 @@ def step():
     fSum = ti.Vector([0.0, 0.0, 0.0])
     tSum = ti.Vector([0.0, 0.0, 0.0])
     boundaryX = 0.0
-    boundaryXArm = ti.Vector([0.0, 0.0, 0.0])
+    boundaryXPart = 0
     boundaryY = 0.0
-    boundaryYArm = ti.Vector([0.0, 0.0, 0.0])
+    boundaryYPart = 0
     for i in range(bodyIdx[b][0], bodyIdx[b][1]):
       f = ti.Vector([0.0, 0.0, 0.0])
       for j in range(N):
@@ -120,26 +121,33 @@ def step():
       if (abs(v[i].y) > abs(boundaryY) and
           x[i].y < -0.5 + R and v[i].y < 0):
         boundaryY = v[i].y
-        boundaryYArm = x[i] - bodyPos[b]
+        boundaryYPart = i
       if (abs(v[i].x) > abs(boundaryX) and
           (x[i].x < -0.8 + R and v[i].x < 0) or
           (x[i].x >  0.8 - R and v[i].x > 0)):
         boundaryX = v[i].x
-        boundaryXArm = x[i] - bodyPos[b]
+        boundaryXPart = i
       f.y -= m[i] * G
       fSum += f
       tSum += (x[i] - bodyPos[b]).cross(f)
 
     if boundaryX != 0:
-      impulseFX = -boundaryX / (0.2 * dt) * 1.5 # 2
-      impulseF = ti.Vector([impulseFX, 0.0, 0.0])
-      fSum += impulseF
-      tSum += boundaryXArm.cross(impulseF)
+      i = boundaryXPart
+      impF = ti.Vector([0.0, 0.0, 0.0])
+      impF.x = -boundaryX / (0.2 * dt) * 1.2  # 2
+      fSum += impF
+      tSum += (x[i] - bodyPos[b]).cross(impF)
     if boundaryY != 0:
-      impulseFY = -boundaryY / (0.2 * dt) * 1.5 # 2
-      impulseF = ti.Vector([0.0, impulseFY, 0.0])
-      fSum += impulseF
-      tSum += boundaryYArm.cross(impulseF)
+      i = boundaryYPart
+      impF = ti.Vector([0.0, 0.0, 0.0])
+      impF.y = -boundaryY / (0.2 * dt) * 1.2  # 2
+      paraV = v[i].xz.norm()
+      fricF = max(-fSum.y, 0) * Mu
+      if paraV >= 1e-5:
+        impF.x -= v[i].x / paraV * fricF
+        impF.z -= v[i].z / paraV * fricF
+      fSum += impF
+      tSum += (x[i] - bodyPos[b]).cross(impF)
 
     # Translational
     # Verlet integration post-step
