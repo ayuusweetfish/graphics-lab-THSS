@@ -20,6 +20,7 @@ bodyIdx = ti.Vector.field(2, int, (M,))   # (start, end)
 bodyPos = ti.Vector.field(3, float, (M,))
 bodyVel = ti.Vector.field(3, float, (M,))
 bodyIne = ti.Matrix.field(3, 3, float, (M,))
+bodyAcc = ti.Vector.field(3, float, (M,))
 bodyAng = ti.Vector.field(3, float, (M,))
 bodyOri = ti.Vector.field(4, float, (M,)) # quaternion, (x, y, z, w)
 
@@ -34,6 +35,7 @@ def init():
     bodyPos[i] = ti.Vector([-0.5 + R * 0.9 * i, R * 0.2 * i + R, 0])
     bodyIdx[i] = ti.Vector([i * 3, i * 3 + 3])
     bodyVel[i] = ti.Vector([-0.2, ti.random() * 0.5, 0])
+    bodyAcc[i] = ti.Vector([0, 0, 0])
     bodyAng[i] = ti.Vector([0, 0, 0])
     bodyOri[i] = ti.Vector([0, 0, 0, 1])
     # Inverse inertia
@@ -73,9 +75,9 @@ def quat_mat(q):
 
 @ti.func
 def step():
-  # Gravity
+  # Verlet integration pre-step
   for i in range(M):
-    bodyVel[i].y -= G * dt
+    bodyPos[i] += bodyVel[i] * dt + bodyAcc[i] * (0.5*dt*dt)
 
   # Calculate particle position and velocity
   for i in range(M):
@@ -115,9 +117,13 @@ def step():
       fSum += f
       tSum += (x[i] - bodyPos[b]).cross(f)
 
-    bodyVel[b] += fSum * 0.2 * dt
-    bodyPos[b] += bodyVel[b] * dt
-    # Update angular momentum
+    # Translational
+    # Verlet integration post-step
+    newAcc = fSum * 0.2
+    newAcc.y -= G
+    bodyVel[b] += (bodyAcc[b] + newAcc) * 0.5 * dt
+    bodyAcc[b] = newAcc
+    # Rotational
     bodyAng[b] += tSum * dt
     rotMat = quat_mat(bodyOri[b])
     angVel = (rotMat * bodyIne[b] * rotMat.transpose()).__matmul__(bodyAng[b])
