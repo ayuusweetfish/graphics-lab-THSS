@@ -29,7 +29,7 @@ rsRadixW = 8
 rsRadix = 1 << rsRadixW
 rsBlockSum = ti.field(int, (rsThreads,))
 rsCount = ti.field(int)
-ti.root.dense(ti.j, rsRadix).dense(ti.i, rsThreads).place(rsCount)
+ti.root.dense(ti.i, rsThreads).dense(ti.j, rsRadix).place(rsCount)
 rsTempProjIdx = ti.field(int)
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N).place(rsTempProjPos, rsTempProjIdx)
@@ -137,8 +137,7 @@ def sortProj():
 
   # Radix sort
   for sortRound in ti.static(range((32 + rsRadixW - 1) // rsRadixW)):
-    # for t, i in ti.ndrange(rsThreads, rsRadix): rsCount[t, i] = 0
-    for t, i in ti.ndrange(rsRadix, rsThreads): rsCount[i, t] = 0
+    for t, i in ti.ndrange(rsThreads, rsRadix): rsCount[t, i] = 0
     # Count
     for t in range(rsThreads):
       tA = N * t // rsThreads
@@ -215,9 +214,7 @@ def step():
   sortProj()
   for i in range(8): debug[i] = projPos[i]
 
-  if not True:
-    debug[0] = 0
-    debug[1] = N * (N - 1) / 2
+  if True:
     for pi in range(N):
       i = projIdx[pi]
       limit = projPos[pi] + R * 2
@@ -319,8 +316,8 @@ camera = ti.ui.make_camera()
 
 step()
 while window.running:
-  #for i in range(10): step()
-  for i in range(50): stepsort()
+  for i in range(10): step()
+  #for i in range(50): stepsort()
 
   camera.position(0, 0, 2)
   camera.lookat(0, 0, 0)
