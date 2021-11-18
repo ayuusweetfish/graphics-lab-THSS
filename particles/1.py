@@ -111,20 +111,24 @@ def quat_mat(q):
 @ti.func
 def colliResp(i, j):
   if body[i] != body[j]:
-    b = body[i]
-    f = ti.Vector([0.0, 0.0, 0.0])
-    d = (x[i] - x[j]).norm()
-    if d < R * 2:
+    r = x[i] - x[j]
+    dsq = r.x * r.x + r.y * r.y
+    if dsq < R * R * 4:
+      f = ti.Vector([0.0, 0.0, 0.0])
       # Repulsive
       dirUnit = (x[i] - x[j]).normalized()
-      f += Ks * (R * 2 - d) * dirUnit
+      f += Ks * (R * 2 - dsq ** 0.5) * dirUnit
       # Damping
       relVel = v[j] - v[i]
       f += Eta * elas[i] * elas[j] * relVel
       # Shear
       f += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
-    fSum[b] += f
-    tSum[b] += (x[i] - bodyPos[b]).cross(f)
+      b = body[i]
+      fSum[b] += f
+      tSum[b] += (x[i] - bodyPos[b]).cross(f)
+      b = body[j]
+      fSum[b] -= f
+      tSum[b] -= (x[j] - bodyPos[b]).cross(f)
 
 @ti.func
 def sortProj():
@@ -248,14 +252,21 @@ def step():
 
   # Responses
   if True:
+    # debug[0] = float(N) * (N - 1) / 2
+    # debug[1] = 0
+    # aa = 0
+    # bb = 0
     for pi in range(N):
       i = projIdx[pi]
       limit = projPos[pi] + R * 2
       for pj in range(pi + 1, N):
         if projPos[pj] > limit: break
         j = projIdx[pj]
+        # aa += 1
+        # if (x[i] - x[j]).norm() <= R * 2: bb += 1
         colliResp(i, j)
-        colliResp(j, i)
+    # debug[1] = aa
+    # debug[2] = bb
 
   for b in range(M):
     f = fSum[b]
