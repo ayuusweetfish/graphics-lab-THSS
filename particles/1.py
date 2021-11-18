@@ -34,6 +34,8 @@ rsTempProjIdx = ti.field(int)
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N).place(rsTempProjPos, rsTempProjIdx)
 
+pcaMat = ti.Vector.field(3, float, (N,))
+
 M = 22222
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
@@ -206,14 +208,48 @@ def step():
     fSum[b] = ti.Vector([0.0, 0.0, 0.0])
     tSum[b] = ti.Vector([0.0, 0.0, 0.0])
 
-  # Collision
-  axis = ti.Vector([0.1, 0.2, 0.3])
+  # Collisions
+  # Find axis with PCA
+  pcaThreads = 128
+  # Zero-centre
+  meanPos = ti.Vector([0.0, 0.0, 0.0])
+  for t in range(pcaThreads):
+    tA = N * t // pcaThreads
+    tB = N * (t + 1) // pcaThreads
+    tlsMeanPos = ti.Vector([0.0, 0.0, 0.0])
+    for i in range(tA, tB): tlsMeanPos += x[i]
+    meanPos += tlsMeanPos
+  meanPos /= N
+  for i in range(N): pcaMat[i] = x[i] - meanPos
+  # Covariance matrix
+  pcaC = ti.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+  for p in ti.static(range(3)):
+    for q in ti.static(range(p, 3)):
+      s = 0.0
+      for t in range(pcaThreads):
+        tA = N * t // pcaThreads
+        tB = N * (t + 1) // pcaThreads
+        tlsS = 0.0
+        for i in range(tA, tB): tlsS += pcaMat[i][p] * pcaMat[i][q]
+        s += tlsS
+      pcaC[p, q] = s
+      pcaC[q, p] = s
+  # for p, q in ti.static(ti.ndrange(3, 3)):
+  #   debug[p * 3 + q] = pcaC[p, q]
+  # Dominant eigenvector by power iteration
+  eigenvector = ti.Vector([ti.random(), ti.random(), ti.random()])
+  for _ in range(1):
+    for it in range(10):
+      eigenvector = (pcaC @ eigenvector).normalized()
+
+  # Sweep and prune
+  axis = eigenvector
   for i in range(N):
     projIdx[i] = i
     projPos[i] = x[i].dot(axis)
   sortProj()
-  for i in range(8): debug[i] = projPos[i]
 
+  # Responses
   if True:
     for pi in range(N):
       i = projIdx[pi]
@@ -278,7 +314,7 @@ def step():
     # Rotational
     bodyAng[b] += t * dt
     rotMat = quat_mat(bodyOri[b])
-    angVel = (rotMat * bodyIne[b] * rotMat.transpose()).__matmul__(bodyAng[b])
+    angVel = (rotMat @ bodyIne[b] @ rotMat.transpose()).__matmul__(bodyAng[b])
     if bodyAng[b].norm() >= 1e-5:
       theta = bodyAng[b].norm() * dt
       dqw = ti.cos(theta / 2)
