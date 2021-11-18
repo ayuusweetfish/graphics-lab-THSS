@@ -31,6 +31,8 @@ rsTempProjIdx = ti.field(int)
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N).place(rsTempProjPos, rsTempProjIdx)
 
+debug2 = ti.field(int, (N, N))
+
 M = 22
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
@@ -188,30 +190,41 @@ def step():
 
   debug[0] = 0
   debug[1] = N * (N - 1) / 2
+  for i, j in ti.ndrange(N, N): debug2[i, j] = 0
+  xx = 280
+  ldebug[xx - 1] = -2
   for pi in range(N):
     i = projIdx[pi]
     limit = projPos[pi] + R * 2
-    for pj in range(i + 1, N):
+    for pj in range(pi + 1, N):
       # if projPos[pj] > limit: break
       j = projIdx[pj]
       colliResp(i, j)
       colliResp(j, i)
+      debug2[i, j] = 1
+      debug2[j, i] = 1
       debug[0] += 1.0
-  ldebug[399] = -1
-  for i in range(N): ldebug[400+i] = projPos[i]
-  ldebug[400 + N] = -1
+      xx1 = ti.atomic_add(xx, 2)
+      if xx1 < 512:
+        ldebug[xx1] = -i
+        ldebug[xx1 + 1] = j
+      if i == j:
+        debug[3] = pi
+        debug[4] = pj
+  ldebug[199] = -1
+  for i in range(N): ldebug[200+i] = projIdx[i]
+  ldebug[200 + N] = -1
   debug[9] = 1
   for i in range(N - 1):
     if projPos[i] > projPos[i + 1]: debug[9] += 1.0
-  debug[8] = -1
-  for i in range(N):
-    found = False
-    for j in range(N):
-      if projIdx[j] == i:
-        found = True
+  debug[6] = 0
+  for _ in range(1):
+    for i, j in ti.ndrange(N, N):
+      if i != j and debug2[i, j] == 0:
+        debug[7] = i
+        debug[8] = j
+        debug[6] += 1
         break
-    if not found:
-      debug[8] = i
 
   for b in range(M):
     # Gravity
@@ -315,4 +328,4 @@ while window.running:
   canvas.scene(scene)
   window.show()
   print(debug)
-  # print(ldebug)
+  print(ldebug)
