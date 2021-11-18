@@ -7,7 +7,7 @@ R = 0.05
 G = 1.5
 
 Ks = 3000
-Eta = 60  # 1
+Eta = 60
 Kt = 1
 Mu = 0.2
 KsB = 10000
@@ -17,7 +17,9 @@ x0 = ti.Vector.field(3, float)
 m = ti.field(float)
 x = ti.Vector.field(3, float)
 v = ti.Vector.field(3, float)
-ti.root.dense(ti.i, N).place(x0, m, x, v)
+elas = ti.field(float)
+body = ti.field(int)
+ti.root.dense(ti.i, N).place(x0, m, x, v, elas, body)
 
 M = 11
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
@@ -50,6 +52,8 @@ def init():
     bodyMas[i] = 0
     ine = ti.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
     for j in range(i * 3, i * 3 + 3):
+      body[j] = i
+      elas[j] = 1
       m[j] = 5
       bodyMas[i] += m[j]
       for p, q in ti.static(ti.ndrange(3, 3)):
@@ -107,7 +111,7 @@ def step():
     for i in range(bodyIdx[b][0], bodyIdx[b][1]):
       f = ti.Vector([0.0, 0.0, 0.0])
       for j in range(N):
-        if j >= bodyIdx[b][0] and j < bodyIdx[b][1]: continue
+        if body[j] == b: continue
         d = (x[i] - x[j]).norm()
         if d < R * 2:
           # Repulsive
@@ -115,7 +119,7 @@ def step():
           f += Ks * (R * 2 - d) * dirUnit
           # Damping
           relVel = v[j] - v[i]
-          f += Eta * relVel
+          f += Eta * elas[i] * elas[j] * relVel
           # Shear
           f += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
       # Impulse from boundaries
