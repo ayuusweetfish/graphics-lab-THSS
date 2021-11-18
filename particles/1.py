@@ -21,6 +21,15 @@ elas = ti.field(float)
 body = ti.field(int)
 ti.root.dense(ti.i, N).place(x0, m, x, v, elas, body)
 
+projIdx = ti.field(int)
+projPos = ti.field(float)
+ti.root.dense(ti.i, N).place(projPos, projIdx)
+rsCount = ti.field(int, (256,))
+rsIdx = ti.field(int, (256,))
+rsTempProjIdx = ti.field(int)
+rsTempProjPos = ti.field(float)
+ti.root.dense(ti.i, N).place(rsTempProjPos, rsTempProjIdx)
+
 M = 11
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
@@ -37,7 +46,8 @@ ti.root.dense(ti.i, M).place(
   fSum, tSum,
 )
 
-count = ti.field(float, ())
+debug = ti.field(float, (10,))
+ldebug = ti.field(float, (512,))
 
 @ti.kernel
 def init():
@@ -108,6 +118,45 @@ def colliResp(i, j):
     fSum[b] += f
     tSum[b] += (x[i] - bodyPos[b]).cross(f)
 
+@ti.func
+def sortProj():
+  # Flip
+  # https://github.com/liufububai/GPU-Sweep-Prune-Collision-Detection/blob/e86fca4a5418884a6694383f4391e23b389d07e8/sapDetection/radixsort.cu#L111
+  for i in range(N):
+    f = ti.bit_cast(projPos[i], ti.uint32)
+    mask = -int(f >> 31) | 0x80000000
+    projPos[i] = ti.bit_cast(f ^ mask, ti.float32)
+
+  # Radix sort
+  for sortRound in ti.static(range(4)):
+    for i in range(256): rsCount[i] = 0
+    # Count
+    for i in range(M):
+      bucket = (ti.bit_cast(projPos[i], ti.uint32) >> (sortRound * 8)) % 256
+      rsCount[bucket] += 1
+
+    # Accumulate counts
+    for _ in range(1):  # Suppress parallelization
+      s = 0
+      for i in range(256):
+        rsIdx[i] = s
+        s += rsCount[i]
+    # Place
+    for i in range(M):
+      bucket = (ti.bit_cast(projPos[i], ti.uint32) >> (sortRound * 8)) % 256
+      pos = ti.atomic_add(rsIdx[bucket], 1)
+      rsTempProjIdx[pos] = projIdx[i]
+      rsTempProjPos[pos] = projPos[i]
+    for i in range(M):
+      projIdx[i] = rsTempProjIdx[i]
+      projPos[i] = rsTempProjPos[i]
+
+  # Unflip
+  for i in range(N):
+    f = ti.bit_cast(projPos[i], ti.uint32)
+    mask = (int(f >> 31) - 1) | 0x80000000
+    projPos[i] = ti.bit_cast(f ^ mask, ti.float32)
+
 @ti.kernel
 def step():
   # Calculate particle position and velocity
@@ -122,10 +171,23 @@ def step():
     tSum[b] = ti.Vector([0.0, 0.0, 0.0])
 
   # Collision
-  for b in range(M):
-    for i in range(bodyIdx[b][0], bodyIdx[b][1]):
-      for j in range(N):
-        colliResp(i, j)
+  axis = ti.Vector([0.1, 0.2, 0.3])
+  for i in range(N):
+    projIdx[i] = i
+    projPos[i] = x[i].dot(axis)
+  sortProj()
+
+  debug[0] = 0
+  debug[1] = N * (N - 1) / 2
+  for pi in range(N):
+    i = projIdx[pi]
+    limit = projPos[pi] + R
+    for pj in range(i, N):
+      if projPos[pj] > limit: break
+      j = projIdx[pj]
+      colliResp(i, j)
+      colliResp(j, i)
+      debug[0] += 1
 
   for b in range(M):
     # Gravity
@@ -228,3 +290,4 @@ while window.running:
   scene.particles(x, radius=R*2, color=(0.6, 0.7, 1))
   canvas.scene(scene)
   window.show()
+  print(debug)
