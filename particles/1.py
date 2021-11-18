@@ -12,7 +12,7 @@ Kt = 1
 Mu = 0.2
 KsB = 10000
 
-N = 6666
+N = 66666
 x0 = ti.Vector.field(3, float)
 m = ti.field(float)
 x = ti.Vector.field(3, float)
@@ -24,17 +24,17 @@ ti.root.dense(ti.i, N).place(x0, m, x, v, elas, body)
 projIdx = ti.field(int)
 projPos = ti.field(float)
 ti.root.dense(ti.i, N).place(projPos, projIdx)
-rsThreads = 32
+rsThreads = 512
 rsRadixW = 8
 rsRadix = 1 << rsRadixW
 rsBlockSum = ti.field(int, (rsThreads,))
-rsCount = ti.field(int, (rsThreads, rsRadix))
-rsIdx = ti.field(int, (rsThreads, rsRadix))
+rsCount = ti.field(int)
+ti.root.dense(ti.j, rsRadix).dense(ti.i, rsThreads).place(rsCount)
 rsTempProjIdx = ti.field(int)
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N).place(rsTempProjPos, rsTempProjIdx)
 
-M = 2222
+M = 22222
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
 bodyVel = ti.Vector.field(3, float)
@@ -137,7 +137,8 @@ def sortProj():
 
   # Radix sort
   for sortRound in ti.static(range((32 + rsRadixW - 1) // rsRadixW)):
-    for t, i in ti.ndrange(rsThreads, rsRadix): rsCount[t, i] = 0
+    # for t, i in ti.ndrange(rsThreads, rsRadix): rsCount[t, i] = 0
+    for t, i in ti.ndrange(rsRadix, rsThreads): rsCount[i, t] = 0
     # Count
     for t in range(rsThreads):
       tA = N * t // rsThreads
@@ -146,60 +147,37 @@ def sortProj():
         bucket = (ti.bit_cast(projPos[i], ti.uint32) >> (sortRound * rsRadixW)) % rsRadix
         rsCount[t, bucket] += 1
 
-    for _ in range(1):
-      xx = 0
-      for t in range(rsThreads):
-        for i in range(rsRadix):
-          xx += rsCount[t, i]
-      ldebug[511] = xx // 100
-
     # Accumulate counts
+    # Each thread processes `rsRadix` elements
     for t in range(rsThreads):
       tA = rsRadix * t
-      tB = rsRadix * (t + 1)
+      x, y = tA // rsThreads, tA % rsThreads
       s = 0
-      s2 = 0
-      s3 = 0
-      xx = 0
-      for i in range(tA, tB):
-        x = i // rsThreads
-        y = i % rsThreads
+      for i in range(rsRadix):
         s += rsCount[y, x]
-        if t == 1 and rsCount[x, y] > 0:
-          ldebug[100 + xx] = x
-          ldebug[101 + xx] = y
-          ldebug[102 + xx] = rsCount[x, y]
-          xx += 3
-        if rsCount[x, y] > 0: s2 += 1
-        if rsCount[x, y] > s3: s3 = rsCount[x, y]
+        y += 1
+        if y == rsThreads: x, y = x + 1, 0
       rsBlockSum[t] = s
-      ldebug[t] = rsBlockSum[t]
-      #ldebug[t*2 + 100] = tA
-      #ldebug[t*2 + 101] = s3
-    xxx = 0
-    for i in range(rsThreads): xxx += rsBlockSum[i]
-    debug[8] = xxx
     for _ in range(1):
       s = 0
       for t in range(rsThreads):
         rsBlockSum[t], s = s, s + rsBlockSum[t]
-    debug[9] = rsBlockSum[rsThreads - 1]
     for t in range(rsThreads):
       tA = rsRadix * t
-      tB = rsRadix * (t + 1)
+      x, y = tA // rsThreads, tA % rsThreads
       s = rsBlockSum[t]
-      for i in range(tA, tB):
-        x = i // rsThreads
-        y = i % rsThreads
-        rsIdx[y, x] = s
-        s += rsCount[y, x]
+      for i in range(rsRadix):
+        rsCount[y, x], s = s, s + rsCount[y, x]
+        y += 1
+        if y == rsThreads: x, y = x + 1, 0
+
     # Place
     for t in range(rsThreads):
       tA = N * t // rsThreads
       tB = N * (t+1) // rsThreads
       for i in range(tA, tB):
         bucket = (ti.bit_cast(projPos[i], ti.uint32) >> (sortRound * rsRadixW)) % rsRadix
-        pos = ti.atomic_add(rsIdx[t, bucket], 1)
+        pos = ti.atomic_add(rsCount[t, bucket], 1)
         rsTempProjIdx[pos] = projIdx[i]
         rsTempProjPos[pos] = projPos[i]
     for i in range(N):
@@ -211,6 +189,10 @@ def sortProj():
     f = ti.bit_cast(projPos[i], ti.uint32)
     mask = (int(f >> 31) - 1) | 0x80000000
     projPos[i] = ti.bit_cast(f ^ mask, ti.float32)
+
+@ti.kernel
+def stepsort():
+  sortProj()
 
 @ti.kernel
 def step():
@@ -246,11 +228,14 @@ def step():
         colliResp(j, i)
 
   for b in range(M):
+    f = fSum[b]
+    t = tSum[b]
+
     # Gravity
     for i in range(bodyIdx[b][0], bodyIdx[b][1]):
       grav = ti.Vector([0.0, -m[i] * G, 0.0])
-      fSum[b] += grav
-      tSum[b] += (x[i] - bodyPos[b]).cross(grav)
+      f += grav
+      t += (x[i] - bodyPos[b]).cross(grav)
 
     # Impulse from boundaries
     boundaryX = 0.0
@@ -272,29 +257,29 @@ def step():
       i = boundaryXPart
       impF = ti.Vector([0.0, 0.0, 0.0])
       impF.x = -boundaryX * bodyMas[b] / dt * 1.2 # 2
-      fSum[b] += impF
-      tSum[b] += (x[i] - bodyPos[b]).cross(impF)
+      f += impF
+      t += (x[i] - bodyPos[b]).cross(impF)
     if boundaryY != 0:
       i = boundaryYPart
       impF = ti.Vector([0.0, 0.0, 0.0])
       impF.y = -boundaryY * bodyMas[b] / dt * 1.2 # 2
       impF.y += KsB * (-0.5 + R - x[i].y)
       paraV = v[i].xz.norm()
-      fricF = max(-fSum[b].y, 0) * Mu
+      fricF = max(-f.y, 0) * Mu
       if paraV >= 1e-5:
         impF.x -= v[i].x / paraV * fricF
         impF.z -= v[i].z / paraV * fricF
-      fSum[b] += impF
-      tSum[b] += (x[i] - bodyPos[b]).cross(impF)
+      f += impF
+      t += (x[i] - bodyPos[b]).cross(impF)
 
     # Integration
     # Translational: Verlet integration
-    newAcc = fSum[b] / bodyMas[b]
+    newAcc = f / bodyMas[b]
     bodyVel[b] += (bodyAcc[b] + newAcc) * 0.5 * dt
     bodyAcc[b] = newAcc
     bodyPos[b] += bodyVel[b] * dt + bodyAcc[b] * (0.5*dt*dt)
     # Rotational
-    bodyAng[b] += tSum[b] * dt
+    bodyAng[b] += t * dt
     rotMat = quat_mat(bodyOri[b])
     angVel = (rotMat * bodyIne[b] * rotMat.transpose()).__matmul__(bodyAng[b])
     if bodyAng[b].norm() >= 1e-5:
@@ -332,8 +317,10 @@ canvas = window.get_canvas()
 scene = ti.ui.Scene()
 camera = ti.ui.make_camera()
 
+step()
 while window.running:
-  for i in range(10): step()
+  #for i in range(10): step()
+  for i in range(50): stepsort()
 
   camera.position(0, 0, 2)
   camera.lookat(0, 0, 0)
@@ -346,5 +333,5 @@ while window.running:
   scene.particles(x, radius=R*2, color=(0.6, 0.7, 1))
   canvas.scene(scene)
   window.show()
-  print(debug)
-  print(ldebug)
+  # print(debug)
+  # print(ldebug)
