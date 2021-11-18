@@ -30,8 +30,11 @@ bodyAcc = ti.Vector.field(3, float)
 bodyOri = ti.Vector.field(4, float)     # Rotation quaternion (x, y, z, w)
 bodyIne = ti.Matrix.field(3, 3, float)  # Inverse inertia tensor
 bodyAng = ti.Vector.field(3, float)     # Angular momentum
+fSum = ti.Vector.field(3, float)  # Accumulated force
+tSum = ti.Vector.field(3, float)  # Accumulated torque
 ti.root.dense(ti.i, M).place(
-  bodyIdx, bodyPos, bodyVel, bodyMas, bodyAcc, bodyOri, bodyIne, bodyAng
+  bodyIdx, bodyPos, bodyVel, bodyMas, bodyAcc, bodyOri, bodyIne, bodyAng,
+  fSum, tSum,
 )
 
 count = ti.field(float, ())
@@ -87,12 +90,26 @@ def quat_mat(q):
     [2*x*z - 2*w*y, 2*y*z + 2*w*x, 1 - 2*x*x - 2*y*y]
   ])
 
+@ti.func
+def colliResp(i, j):
+  if body[i] != body[j]:
+    b = body[i]
+    f = ti.Vector([0.0, 0.0, 0.0])
+    d = (x[i] - x[j]).norm()
+    if d < R * 2:
+      # Repulsive
+      dirUnit = (x[i] - x[j]).normalized()
+      f += Ks * (R * 2 - d) * dirUnit
+      # Damping
+      relVel = v[j] - v[i]
+      f += Eta * elas[i] * elas[j] * relVel
+      # Shear
+      f += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
+    fSum[b] += f
+    tSum[b] += (x[i] - bodyPos[b]).cross(f)
+
 @ti.kernel
 def step():
-  # Verlet integration pre-step
-  for i in range(M):
-    bodyPos[i] += bodyVel[i] * dt + bodyAcc[i] * (0.5*dt*dt)
-
   # Calculate particle position and velocity
   for i in range(M):
     for j in range(bodyIdx[i][0], bodyIdx[i][1]):
@@ -100,29 +117,29 @@ def step():
       x[j] = bodyPos[i] + r
       v[j] = bodyVel[i] + bodyAng[i].cross(r)
 
+  for b in range(M):
+    fSum[b] = ti.Vector([0.0, 0.0, 0.0])
+    tSum[b] = ti.Vector([0.0, 0.0, 0.0])
+
   # Collision
   for b in range(M):
-    fSum = ti.Vector([0.0, 0.0, 0.0])
-    tSum = ti.Vector([0.0, 0.0, 0.0])
+    for i in range(bodyIdx[b][0], bodyIdx[b][1]):
+      for j in range(N):
+        colliResp(i, j)
+
+  for b in range(M):
+    # Gravity
+    for i in range(bodyIdx[b][0], bodyIdx[b][1]):
+      grav = ti.Vector([0.0, -m[i] * G, 0.0])
+      fSum[b] += grav
+      tSum[b] += (x[i] - bodyPos[b]).cross(grav)
+
+    # Impulse from boundaries
     boundaryX = 0.0
     boundaryXPart = 0
     boundaryY = 0.0
     boundaryYPart = 0
     for i in range(bodyIdx[b][0], bodyIdx[b][1]):
-      f = ti.Vector([0.0, 0.0, 0.0])
-      for j in range(N):
-        if body[j] == b: continue
-        d = (x[i] - x[j]).norm()
-        if d < R * 2:
-          # Repulsive
-          dirUnit = (x[i] - x[j]).normalized()
-          f += Ks * (R * 2 - d) * dirUnit
-          # Damping
-          relVel = v[j] - v[i]
-          f += Eta * elas[i] * elas[j] * relVel
-          # Shear
-          f += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
-      # Impulse from boundaries
       if (abs(v[i].y) > abs(boundaryY) and
           x[i].y < -0.5 + R and v[i].y < 0):
         boundaryY = v[i].y
@@ -132,36 +149,34 @@ def step():
           (x[i].x >  0.8 - R and v[i].x > 0)):
         boundaryX = v[i].x
         boundaryXPart = i
-      f.y -= m[i] * G
-      fSum += f
-      tSum += (x[i] - bodyPos[b]).cross(f)
 
     if boundaryX != 0:
       i = boundaryXPart
       impF = ti.Vector([0.0, 0.0, 0.0])
       impF.x = -boundaryX * bodyMas[b] / dt * 1.2 # 2
-      fSum += impF
-      tSum += (x[i] - bodyPos[b]).cross(impF)
+      fSum[b] += impF
+      tSum[b] += (x[i] - bodyPos[b]).cross(impF)
     if boundaryY != 0:
       i = boundaryYPart
       impF = ti.Vector([0.0, 0.0, 0.0])
       impF.y = -boundaryY * bodyMas[b] / dt * 1.2 # 2
       impF.y += KsB * (-0.5 + R - x[i].y)
       paraV = v[i].xz.norm()
-      fricF = max(-fSum.y, 0) * Mu
+      fricF = max(-fSum[b].y, 0) * Mu
       if paraV >= 1e-5:
         impF.x -= v[i].x / paraV * fricF
         impF.z -= v[i].z / paraV * fricF
-      fSum += impF
-      tSum += (x[i] - bodyPos[b]).cross(impF)
+      fSum[b] += impF
+      tSum[b] += (x[i] - bodyPos[b]).cross(impF)
 
-    # Translational
-    # Verlet integration post-step
-    newAcc = fSum / bodyMas[b]
+    # Integration
+    # Translational: Verlet integration
+    newAcc = fSum[b] / bodyMas[b]
     bodyVel[b] += (bodyAcc[b] + newAcc) * 0.5 * dt
     bodyAcc[b] = newAcc
+    bodyPos[b] += bodyVel[b] * dt + bodyAcc[b] * (0.5*dt*dt)
     # Rotational
-    bodyAng[b] += tSum * dt
+    bodyAng[b] += tSum[b] * dt
     rotMat = quat_mat(bodyOri[b])
     angVel = (rotMat * bodyIne[b] * rotMat.transpose()).__matmul__(bodyAng[b])
     if bodyAng[b].norm() >= 1e-5:
