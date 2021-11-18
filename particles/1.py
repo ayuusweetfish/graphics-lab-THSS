@@ -12,7 +12,7 @@ Kt = 1
 Mu = 0.2
 KsB = 10000
 
-N = 66
+N = 6666
 x0 = ti.Vector.field(3, float)
 m = ti.field(float)
 x = ti.Vector.field(3, float)
@@ -24,16 +24,17 @@ ti.root.dense(ti.i, N).place(x0, m, x, v, elas, body)
 projIdx = ti.field(int)
 projPos = ti.field(float)
 ti.root.dense(ti.i, N).place(projPos, projIdx)
-rsThreads = 2
-rsCount = ti.field(int, (rsThreads, 256))
-rsIdx = ti.field(int, (rsThreads, 256))
+rsThreads = 32
+rsRadixW = 8
+rsRadix = 1 << rsRadixW
+rsBlockSum = ti.field(int, (rsThreads,))
+rsCount = ti.field(int, (rsThreads, rsRadix))
+rsIdx = ti.field(int, (rsThreads, rsRadix))
 rsTempProjIdx = ti.field(int)
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N).place(rsTempProjPos, rsTempProjIdx)
 
-debug2 = ti.field(int, (N, N))
-
-M = 22
+M = 2222
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
 bodyVel = ti.Vector.field(3, float)
@@ -58,7 +59,11 @@ def init():
     x0[i * 3 + 0] = ti.Vector([R * 0.8, -R * 1.4, 0])
     x0[i * 3 + 1] = ti.Vector([0, 0, 0])
     x0[i * 3 + 2] = ti.Vector([-R * 0.8, R * 1.4, 0])
-    bodyPos[i] = ti.Vector([-0.5 + R * 1.8 * (i % 11), R * 6.4 * float(i // 11) + R, 0])
+    bodyPos[i] = ti.Vector([
+      -0.5 + R * 1.8 * (i % 11),
+      R * 6.4 * float(i // 11) + R,
+      R * 0.4 * (i % 7),
+    ])
     bodyIdx[i] = ti.Vector([i * 3, i * 3 + 3])
     bodyVel[i] = ti.Vector([-0.2, ti.random() * 0.5, 0])
     bodyAcc[i] = ti.Vector([0, 0, 0])
@@ -131,29 +136,69 @@ def sortProj():
     projPos[i] = ti.bit_cast(f ^ mask, ti.float32)
 
   # Radix sort
-  for sortRound in ti.static(range(4)):
-    for t, i in ti.ndrange(rsThreads, 256): rsCount[t, i] = 0
+  for sortRound in ti.static(range((32 + rsRadixW - 1) // rsRadixW)):
+    for t, i in ti.ndrange(rsThreads, rsRadix): rsCount[t, i] = 0
     # Count
     for t in range(rsThreads):
       tA = N * t // rsThreads
       tB = N * (t+1) // rsThreads
       for i in range(tA, tB):
-        bucket = (ti.bit_cast(projPos[i], ti.uint32) >> (sortRound * 8)) % 256
+        bucket = (ti.bit_cast(projPos[i], ti.uint32) >> (sortRound * rsRadixW)) % rsRadix
         rsCount[t, bucket] += 1
 
+    for _ in range(1):
+      xx = 0
+      for t in range(rsThreads):
+        for i in range(rsRadix):
+          xx += rsCount[t, i]
+      ldebug[511] = xx // 100
+
     # Accumulate counts
-    for _ in range(1):  # Suppress parallelization
+    for t in range(rsThreads):
+      tA = rsRadix * t
+      tB = rsRadix * (t + 1)
       s = 0
-      for i in range(256):
-        for t in range(rsThreads):
-          rsIdx[t, i] = s
-          s += rsCount[t, i]
+      s2 = 0
+      s3 = 0
+      xx = 0
+      for i in range(tA, tB):
+        x = i // rsThreads
+        y = i % rsThreads
+        s += rsCount[y, x]
+        if t == 1 and rsCount[x, y] > 0:
+          ldebug[100 + xx] = x
+          ldebug[101 + xx] = y
+          ldebug[102 + xx] = rsCount[x, y]
+          xx += 3
+        if rsCount[x, y] > 0: s2 += 1
+        if rsCount[x, y] > s3: s3 = rsCount[x, y]
+      rsBlockSum[t] = s
+      ldebug[t] = rsBlockSum[t]
+      #ldebug[t*2 + 100] = tA
+      #ldebug[t*2 + 101] = s3
+    xxx = 0
+    for i in range(rsThreads): xxx += rsBlockSum[i]
+    debug[8] = xxx
+    for _ in range(1):
+      s = 0
+      for t in range(rsThreads):
+        rsBlockSum[t], s = s, s + rsBlockSum[t]
+    debug[9] = rsBlockSum[rsThreads - 1]
+    for t in range(rsThreads):
+      tA = rsRadix * t
+      tB = rsRadix * (t + 1)
+      s = rsBlockSum[t]
+      for i in range(tA, tB):
+        x = i // rsThreads
+        y = i % rsThreads
+        rsIdx[y, x] = s
+        s += rsCount[y, x]
     # Place
     for t in range(rsThreads):
       tA = N * t // rsThreads
       tB = N * (t+1) // rsThreads
       for i in range(tA, tB):
-        bucket = (ti.bit_cast(projPos[i], ti.uint32) >> (sortRound * 8)) % 256
+        bucket = (ti.bit_cast(projPos[i], ti.uint32) >> (sortRound * rsRadixW)) % rsRadix
         pos = ti.atomic_add(rsIdx[t, bucket], 1)
         rsTempProjIdx[pos] = projIdx[i]
         rsTempProjPos[pos] = projPos[i]
@@ -185,46 +230,20 @@ def step():
   for i in range(N):
     projIdx[i] = i
     projPos[i] = x[i].dot(axis)
-  for i in range(M): ldebug[300+i] = projPos[i]
   sortProj()
+  for i in range(8): debug[i] = projPos[i]
 
-  debug[0] = 0
-  debug[1] = N * (N - 1) / 2
-  for i, j in ti.ndrange(N, N): debug2[i, j] = 0
-  xx = 280
-  ldebug[xx - 1] = -2
-  for pi in range(N):
-    i = projIdx[pi]
-    limit = projPos[pi] + R * 2
-    for pj in range(pi + 1, N):
-      # if projPos[pj] > limit: break
-      j = projIdx[pj]
-      colliResp(i, j)
-      colliResp(j, i)
-      debug2[i, j] = 1
-      debug2[j, i] = 1
-      debug[0] += 1.0
-      xx1 = ti.atomic_add(xx, 2)
-      if xx1 < 512:
-        ldebug[xx1] = -i
-        ldebug[xx1 + 1] = j
-      if i == j:
-        debug[3] = pi
-        debug[4] = pj
-  ldebug[199] = -1
-  for i in range(N): ldebug[200+i] = projIdx[i]
-  ldebug[200 + N] = -1
-  debug[9] = 1
-  for i in range(N - 1):
-    if projPos[i] > projPos[i + 1]: debug[9] += 1.0
-  debug[6] = 0
-  for _ in range(1):
-    for i, j in ti.ndrange(N, N):
-      if i != j and debug2[i, j] == 0:
-        debug[7] = i
-        debug[8] = j
-        debug[6] += 1
-        break
+  if not True:
+    debug[0] = 0
+    debug[1] = N * (N - 1) / 2
+    for pi in range(N):
+      i = projIdx[pi]
+      limit = projPos[pi] + R * 2
+      for pj in range(pi + 1, N):
+        if projPos[pj] > limit: break
+        j = projIdx[pj]
+        colliResp(i, j)
+        colliResp(j, i)
 
   for b in range(M):
     # Gravity
