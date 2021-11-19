@@ -28,7 +28,7 @@ ti.root.dense(ti.i, N).place(x0, m, x, v, elas, radius, body)
 projIdx = ti.field(int)
 projPos = ti.field(float)
 ti.root.dense(ti.i, N).place(projPos, projIdx)
-rsThreads = 512
+rsThreads = N // 200 + 1
 rsRadixW = 8
 rsRadix = 1 << rsRadixW
 rsBlockSum = ti.field(int, (rsThreads,))
@@ -293,36 +293,19 @@ def step():
       t += (x[i] - bodyPos[b]).cross(grav)
 
     # Impulse from boundaries
-    boundaryX = 0.0
-    boundaryXPart = 0
     boundaryY = 0.0
     boundaryYPart = 0
     for i in range(bodyIdx[b][0], bodyIdx[b][1]):
       if (abs(v[i].y) > abs(boundaryY) and
-          x[i].y < -0.5 + radius[i] and v[i].y < 0):
+          x[i].y < radius[i] and v[i].y < 0):
         boundaryY = v[i].y
         boundaryYPart = i
-      if (abs(v[i].x) > abs(boundaryX) and
-          (x[i].x < -0.8 + radius[i] and v[i].x < 0) or
-          (x[i].x >  0.8 - radius[i] and v[i].x > 0)):
-        boundaryX = v[i].x
-        boundaryXPart = i
 
-    if boundaryX != 0:
-      i = boundaryXPart
-      impF = ti.Vector([0.0, 0.0, 0.0])
-      impF.x = -boundaryX * bodyMas[b] / dt * EtaB
-      if x[i].x < -0.8 + radius[i]:
-        impF.x += KsB * (-0.8 + radius[i] - x[i].x)
-      else:
-        impF.x -= KsB * (x[i].x - (0.8 - radius[i]))
-      f += impF
-      t += (x[i] - bodyPos[b]).cross(impF)
     if boundaryY != 0:
       i = boundaryYPart
       impF = ti.Vector([0.0, 0.0, 0.0])
       impF.y = -boundaryY * bodyMas[b] / dt * EtaB
-      impF.y += KsB * (-0.5 + radius[i] - x[i].y)
+      impF.y += KsB * (radius[i] - x[i].y)
       paraV = v[i].xz.norm()
       fricF = max(-f.y, 0) * Mu
       if paraV >= 1e-5:
@@ -351,25 +334,22 @@ def step():
       bodyOri[b] = quat_mul(dq, bodyOri[b])
 
 boundVertsL = [
-  [-0.8, -0.5, -1],
-  [ 0.8, -0.5, -1],
-  [ 0.8, -0.5,  1],
-  [-0.8, -0.5,  1],
+  [-100, -0, -1],
+  [ 100, -0, -1],
+  [ 100, -0,  1],
+  [-100, -0,  1],
 
-  [-0.8,  0.5, -1],
-  [ 0.8,  0.5, -1],
-  [ 0.8,  0.5,  1],
-  [-0.8,  0.5,  1],
+  [-100,  0, -1],
+  [ 100,  0, -1],
+  [ 100,  0,  1],
+  [-100,  0,  1],
 ]
 boundInds0L = [0, 1, 2, 2, 3, 0]  # bottom
-boundInds1L = [1, 2, 5, 2, 6, 5, 0, 3, 7, 0, 7, 4]  # right, left
 boundVerts = ti.Vector.field(3, float, len(boundVertsL))
 boundInds0 = ti.field(int, len(boundInds0L))
-boundInds1 = ti.field(int, len(boundInds1L))
 import numpy as np
 boundVerts.from_numpy(np.array(boundVertsL, dtype=np.float32))
 boundInds0.from_numpy(np.array(boundInds0L, dtype=np.int32))
-boundInds1.from_numpy(np.array(boundInds1L, dtype=np.int32))
 
 init()
 
@@ -383,15 +363,14 @@ while window.running:
   for i in range(10): step()
   #for i in range(50): stepsort()
 
-  #camera.position(10, 0, 20)
-  camera.position(0, 0, 2)
+  #camera.position(10, 1, 20)
+  camera.position(0, 1, 2)
   camera.lookat(0, 0, 0)
   scene.set_camera(camera)
 
   scene.point_light(pos=(0.5, 1, 2), color=(0.5, 0.5, 0.5))
   scene.ambient_light(color=(0.5, 0.5, 0.5))
   scene.mesh(boundVerts, indices=boundInds0, color=(0.65, 0.65, 0.5), two_sided=True)
-  scene.mesh(boundVerts, indices=boundInds1, color=(0.7, 0.68, 0.6), two_sided=True)
   scene.particles(x, radius=R*2, color=(0.6, 0.7, 1))
   canvas.scene(scene)
   window.show()
