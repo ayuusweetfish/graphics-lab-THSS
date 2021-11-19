@@ -11,6 +11,9 @@ Eta = 60
 Kt = 1
 Mu = 0.2
 KsB = 10000
+EtaB = 1.2  # between 1 and 2
+
+Vmax = 3
 
 N = 66666
 x0 = ti.Vector.field(3, float)
@@ -34,7 +37,7 @@ rsTempProjIdx = ti.field(int)
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N).place(rsTempProjPos, rsTempProjIdx)
 
-M = 22222
+M = 11111
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
 bodyVel = ti.Vector.field(3, float)
@@ -56,15 +59,18 @@ ldebug = ti.field(float, (512,))
 @ti.kernel
 def init():
   for i in range(M):
-    x0[i * 3 + 0] = ti.Vector([R * 0.8, -R * 1.4, 0])
-    x0[i * 3 + 1] = ti.Vector([0, 0, 0])
-    x0[i * 3 + 2] = ti.Vector([-R * 0.8, R * 1.4, 0])
+    x0[i * 6 + 0] = ti.Vector([2.0, 0.0, 0.0]) * (R * 0.9)
+    x0[i * 6 + 1] = ti.Vector([-2.0, 0.0, 0.0]) * (R * 0.9)
+    x0[i * 6 + 2] = ti.Vector([1.0, 3.0**0.5, 0.0]) * (R * 0.9)
+    x0[i * 6 + 3] = ti.Vector([1.0, -3.0**0.5, 0.0]) * (R * 0.9)
+    x0[i * 6 + 4] = ti.Vector([-1.0, 3.0**0.5, 0.0]) * (R * 0.9)
+    x0[i * 6 + 5] = ti.Vector([-1.0, -3.0**0.5, 0.0]) * (R * 0.9)
     bodyPos[i] = ti.Vector([
       -0.5 + R * 1.8 * (i % 11),
       R * 6.4 * float(i // 11) + R,
       R * 0.4 * (i % 7),
     ])
-    bodyIdx[i] = ti.Vector([i * 3, i * 3 + 3])
+    bodyIdx[i] = ti.Vector([i * 6, i * 6 + 6])
     bodyVel[i] = ti.Vector([-0.2, ti.random() * 0.5, 0])
     bodyAcc[i] = ti.Vector([0, 0, 0])
     bodyAng[i] = ti.Vector([0, 0, 0])
@@ -72,7 +78,7 @@ def init():
     # Mass and inverse inertia tensor
     bodyMas[i] = 0
     ine = ti.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
-    for j in range(i * 3, i * 3 + 3):
+    for j in range(i * 6, i * 6 + 6):
       body[j] = i
       elas[j] = 1
       m[j] = 5
@@ -297,13 +303,17 @@ def step():
     if boundaryX != 0:
       i = boundaryXPart
       impF = ti.Vector([0.0, 0.0, 0.0])
-      impF.x = -boundaryX * bodyMas[b] / dt * 1.2 # 2
+      impF.x = -boundaryX * bodyMas[b] / dt * EtaB
+      if x[i].x < -0.8 + R:
+        impF.x += KsB * (-0.8 + R - x[i].x)
+      else:
+        impF.x -= KsB * (x[i].x - (0.8 - R))
       f += impF
       t += (x[i] - bodyPos[b]).cross(impF)
     if boundaryY != 0:
       i = boundaryYPart
       impF = ti.Vector([0.0, 0.0, 0.0])
-      impF.y = -boundaryY * bodyMas[b] / dt * 1.2 # 2
+      impF.y = -boundaryY * bodyMas[b] / dt * EtaB
       impF.y += KsB * (-0.5 + R - x[i].y)
       paraV = v[i].xz.norm()
       fricF = max(-f.y, 0) * Mu
@@ -317,6 +327,8 @@ def step():
     # Translational: Verlet integration
     newAcc = f / bodyMas[b]
     bodyVel[b] += (bodyAcc[b] + newAcc) * 0.5 * dt
+    Vnorm = bodyVel[b].norm()
+    if Vnorm >= Vmax: bodyVel[b] *= Vmax / Vnorm
     bodyAcc[b] = newAcc
     bodyPos[b] += bodyVel[b] * dt + bodyAcc[b] * (0.5*dt*dt)
     # Rotational
@@ -363,6 +375,7 @@ while window.running:
   for i in range(10): step()
   #for i in range(50): stepsort()
 
+  #camera.position(10, 0, 20)
   camera.position(0, 0, 2)
   camera.lookat(0, 0, 0)
   scene.set_camera(camera)
