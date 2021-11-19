@@ -90,6 +90,7 @@ def init():
         if p == q:
           ine[p, q] += m[j] * x0[j].norm() ** 2
     bodyIne[i] = ine.inverse()
+  for i in range(N): projIdx[i] = i
 
 @ti.func
 def quat_mul(a, b):
@@ -258,8 +259,7 @@ def step():
   # Sweep and prune
   axis = eigenvector
   for i in range(N):
-    projIdx[i] = i
-    projPos[i] = x[i].dot(axis)
+    projPos[i] = x[projIdx[i]].dot(axis)
   sortProj()
 
   # Responses
