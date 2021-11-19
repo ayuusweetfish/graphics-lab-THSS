@@ -21,8 +21,9 @@ m = ti.field(float)
 x = ti.Vector.field(3, float)
 v = ti.Vector.field(3, float)
 elas = ti.field(float)
+radius = ti.field(float)
 body = ti.field(int)
-ti.root.dense(ti.i, N).place(x0, m, x, v, elas, body)
+ti.root.dense(ti.i, N).place(x0, m, x, v, elas, radius, body)
 
 projIdx = ti.field(int)
 projPos = ti.field(float)
@@ -82,6 +83,7 @@ def init():
       body[j] = i
       elas[j] = 1
       m[j] = 5
+      radius[j] = R
       bodyMas[i] += m[j]
       for p, q in ti.static(ti.ndrange(3, 3)):
         ine[p, q] -= m[j] * x0[j][p] * x0[j][q]
@@ -115,26 +117,27 @@ def quat_mat(q):
   ])
 
 @ti.func
-def colliResp(i, j):
-  if body[i] != body[j]:
-    r = x[i] - x[j]
+def colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi):
+  bodyj = body[j]
+  if bodyi != bodyj:
+    xj = x[j]
+    r = xi - xj
     dsq = r.x * r.x + r.y * r.y
-    if dsq < R * R * 4:
+    dist = radiusi + radius[j]
+    if dsq < dist * dist:
       f = ti.Vector([0.0, 0.0, 0.0])
       # Repulsive
-      dirUnit = (x[i] - x[j]).normalized()
-      f += Ks * (R * 2 - dsq ** 0.5) * dirUnit
+      dirUnit = (xi - xj).normalized()
+      f += Ks * (dist - dsq ** 0.5) * dirUnit
       # Damping
-      relVel = v[j] - v[i]
-      f += Eta * elas[i] * elas[j] * relVel
+      relVel = v[j] - vi
+      f += Etaelasi * elas[j] * relVel
       # Shear
       f += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
-      b = body[i]
-      fSum[b] += f
-      tSum[b] += (x[i] - bodyPos[b]).cross(f)
-      b = body[j]
-      fSum[b] -= f
-      tSum[b] -= (x[j] - bodyPos[b]).cross(f)
+      fSum[bodyi] += f
+      tSum[bodyi] += (xi - bodyPos[bodyi]).cross(f)
+      fSum[bodyj] -= f
+      tSum[bodyj] -= (xj - bodyPos[bodyj]).cross(f)
 
 @ti.func
 def sortPass(sortRound, pos1, idx1, pos2, idx2):
@@ -268,12 +271,14 @@ def step():
     for pi in range(N):
       i = projIdx[pi]
       limit = projPos[pi] + R * 2
+      bodyi, radiusi, xi, vi = body[i], radius[i], x[i], v[i]
+      Etaelasi = Eta * elas[i]
       for pj in range(pi + 1, N):
         if projPos[pj] > limit: break
         j = projIdx[pj]
         # aa += 1
         # if (x[i] - x[j]).norm() <= R * 2: bb += 1
-        colliResp(i, j)
+        colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi)
     # debug[1] = aa
     # debug[2] = bb
 
@@ -294,12 +299,12 @@ def step():
     boundaryYPart = 0
     for i in range(bodyIdx[b][0], bodyIdx[b][1]):
       if (abs(v[i].y) > abs(boundaryY) and
-          x[i].y < -0.5 + R and v[i].y < 0):
+          x[i].y < -0.5 + radius[i] and v[i].y < 0):
         boundaryY = v[i].y
         boundaryYPart = i
       if (abs(v[i].x) > abs(boundaryX) and
-          (x[i].x < -0.8 + R and v[i].x < 0) or
-          (x[i].x >  0.8 - R and v[i].x > 0)):
+          (x[i].x < -0.8 + radius[i] and v[i].x < 0) or
+          (x[i].x >  0.8 - radius[i] and v[i].x > 0)):
         boundaryX = v[i].x
         boundaryXPart = i
 
@@ -307,17 +312,17 @@ def step():
       i = boundaryXPart
       impF = ti.Vector([0.0, 0.0, 0.0])
       impF.x = -boundaryX * bodyMas[b] / dt * EtaB
-      if x[i].x < -0.8 + R:
-        impF.x += KsB * (-0.8 + R - x[i].x)
+      if x[i].x < -0.8 + radius[i]:
+        impF.x += KsB * (-0.8 + radius[i] - x[i].x)
       else:
-        impF.x -= KsB * (x[i].x - (0.8 - R))
+        impF.x -= KsB * (x[i].x - (0.8 - radius[i]))
       f += impF
       t += (x[i] - bodyPos[b]).cross(impF)
     if boundaryY != 0:
       i = boundaryYPart
       impF = ti.Vector([0.0, 0.0, 0.0])
       impF.y = -boundaryY * bodyMas[b] / dt * EtaB
-      impF.y += KsB * (-0.5 + R - x[i].y)
+      impF.y += KsB * (-0.5 + radius[i] - x[i].y)
       paraV = v[i].xz.norm()
       fricF = max(-f.y, 0) * Mu
       if paraV >= 1e-5:
