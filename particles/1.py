@@ -11,11 +11,11 @@ Eta = 60
 Kt = 1
 Mu = 0.2
 KsB = 10000
-EtaB = 1.2  # between 1 and 2
+EtaB = 0.3
 
 Vmax = 3
 
-N = 66666
+N = 77777
 x0 = ti.Vector.field(3, float)
 m = ti.field(float)
 x = ti.Vector.field(3, float)
@@ -60,18 +60,19 @@ ldebug = ti.field(float, (512,))
 @ti.kernel
 def init():
   for i in range(M):
-    x0[i * 6 + 0] = ti.Vector([2.0, 0.0, 0.0]) * (R * 0.9)
-    x0[i * 6 + 1] = ti.Vector([-2.0, 0.0, 0.0]) * (R * 0.9)
-    x0[i * 6 + 2] = ti.Vector([1.0, 3.0**0.5, 0.0]) * (R * 0.9)
-    x0[i * 6 + 3] = ti.Vector([1.0, -3.0**0.5, 0.0]) * (R * 0.9)
-    x0[i * 6 + 4] = ti.Vector([-1.0, 3.0**0.5, 0.0]) * (R * 0.9)
-    x0[i * 6 + 5] = ti.Vector([-1.0, -3.0**0.5, 0.0]) * (R * 0.9)
+    x0[i * 7 + 0] = ti.Vector([2.0, 0.0, 0.0]) * (R * 0.9)
+    x0[i * 7 + 1] = ti.Vector([-2.0, 0.0, 0.0]) * (R * 0.9)
+    x0[i * 7 + 2] = ti.Vector([1.0, 3.0**0.5, 0.0]) * (R * 0.9)
+    x0[i * 7 + 3] = ti.Vector([1.0, -3.0**0.5, 0.0]) * (R * 0.9)
+    x0[i * 7 + 4] = ti.Vector([-1.0, 3.0**0.5, 0.0]) * (R * 0.9)
+    x0[i * 7 + 5] = ti.Vector([-1.0, -3.0**0.5, 0.0]) * (R * 0.9)
+    x0[i * 7 + 6] = ti.Vector([4.0, 0.0, 0.0]) * (R * 0.9)
     bodyPos[i] = ti.Vector([
       -0.5 + R * 1.8 * (i % 11),
       R * 6.4 * float(i // 11) + R,
       R * 0.4 * (i % 7),
     ])
-    bodyIdx[i] = ti.Vector([i * 6, i * 6 + 6])
+    bodyIdx[i] = ti.Vector([i * 7, i * 7 + 7])
     bodyVel[i] = ti.Vector([-0.2, ti.random() * 0.5, 0])
     bodyAcc[i] = ti.Vector([0, 0, 0])
     bodyAng[i] = ti.Vector([0, 0, 0])
@@ -79,12 +80,18 @@ def init():
     # Mass and inverse inertia tensor
     bodyMas[i] = 0
     ine = ti.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
-    for j in range(i * 6, i * 6 + 6):
+    # Normalize position
+    cm = ti.Vector([0.0, 0.0, 0.0])
+    for j in range(i * 7, i * 7 + 7):
       body[j] = i
       elas[j] = 1
       m[j] = 5
       radius[j] = R
       bodyMas[i] += m[j]
+      cm += m[j] * x0[j]
+    cm /= 7
+    for j in range(i * 7, i * 7 + 7): x0[j] -= cm
+    for j in range(i * 7, i * 7 + 7):
       for p, q in ti.static(ti.ndrange(3, 3)):
         ine[p, q] -= m[j] * x0[j][p] * x0[j][q]
         if p == q:
@@ -334,15 +341,15 @@ def step():
       bodyOri[b] = quat_mul(dq, bodyOri[b])
 
 boundVertsL = [
-  [-100, -0, -1],
-  [ 100, -0, -1],
-  [ 100, -0,  1],
-  [-100, -0,  1],
+  [-100, -0, -100],
+  [ 100, -0, -100],
+  [ 100, -0,  100],
+  [-100, -0,  100],
 
-  [-100,  0, -1],
-  [ 100,  0, -1],
-  [ 100,  0,  1],
-  [-100,  0,  1],
+  [-100,  0, -100],
+  [ 100,  0, -100],
+  [ 100,  0,  100],
+  [-100,  0,  100],
 ]
 boundInds0L = [0, 1, 2, 2, 3, 0]  # bottom
 boundVerts = ti.Vector.field(3, float, len(boundVertsL))
@@ -353,7 +360,7 @@ boundInds0.from_numpy(np.array(boundInds0L, dtype=np.int32))
 
 init()
 
-window = ti.ui.Window('Collision', (600, 600), vsync=True)
+window = ti.ui.Window('Collision', (1280, 720), vsync=True)
 canvas = window.get_canvas()
 scene = ti.ui.Scene()
 camera = ti.ui.make_camera()
@@ -364,7 +371,7 @@ while window.running:
   #for i in range(50): stepsort()
 
   #camera.position(10, 1, 20)
-  camera.position(0, 1, 2)
+  camera.position(4, 5, 6)
   camera.lookat(0, 0, 0)
   scene.set_camera(camera)
 
