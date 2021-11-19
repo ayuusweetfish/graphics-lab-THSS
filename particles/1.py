@@ -137,6 +137,52 @@ def colliResp(i, j):
       tSum[b] -= (x[j] - bodyPos[b]).cross(f)
 
 @ti.func
+def sortPass(sortRound, pos1, idx1, pos2, idx2):
+  for t, i in ti.ndrange(rsThreads, rsRadix): rsCount[t, i] = 0
+  # Count
+  for t in range(rsThreads):
+    tA = N * t // rsThreads
+    tB = N * (t+1) // rsThreads
+    for i in range(tA, tB):
+      bucket = (ti.bit_cast(pos1[i], ti.uint32) >> (sortRound * rsRadixW)) % rsRadix
+      rsCount[t, bucket] += 1
+
+  # Accumulate counts
+  # Each thread processes `rsRadix` elements
+  for t in range(rsThreads):
+    tA = rsRadix * t
+    x, y = tA // rsThreads, tA % rsThreads
+    s = 0
+    for i in range(rsRadix):
+      s += rsCount[y, x]
+      y += 1
+      if y == rsThreads: x, y = x + 1, 0
+    rsBlockSum[t] = s
+  for _ in range(1):
+    s = 0
+    for t in range(rsThreads):
+      rsBlockSum[t], s = s, s + rsBlockSum[t]
+  for t in range(rsThreads):
+    tA = rsRadix * t
+    x, y = tA // rsThreads, tA % rsThreads
+    s = rsBlockSum[t]
+    for i in range(rsRadix):
+      rsCount[y, x], s = s, s + rsCount[y, x]
+      y += 1
+      if y == rsThreads: x, y = x + 1, 0
+
+  # Place
+  for t in range(rsThreads):
+    tA = N * t // rsThreads
+    tB = N * (t+1) // rsThreads
+    for i in range(tA, tB):
+      bucket = (ti.bit_cast(pos1[i], ti.uint32) >> (sortRound * rsRadixW)) % rsRadix
+      pos = rsCount[t, bucket]
+      idx2[pos] = idx1[i]
+      pos2[pos] = pos1[i]
+      rsCount[t, bucket] += 1
+
+@ti.func
 def sortProj():
   # Flip
   # https://github.com/liufububai/GPU-Sweep-Prune-Collision-Detection/blob/e86fca4a5418884a6694383f4391e23b389d07e8/sapDetection/radixsort.cu#L111
@@ -146,52 +192,9 @@ def sortProj():
     projPos[i] = ti.bit_cast(f ^ mask, ti.float32)
 
   # Radix sort
-  for sortRound in ti.static(range((32 + rsRadixW - 1) // rsRadixW)):
-    for t, i in ti.ndrange(rsThreads, rsRadix): rsCount[t, i] = 0
-    # Count
-    for t in range(rsThreads):
-      tA = N * t // rsThreads
-      tB = N * (t+1) // rsThreads
-      for i in range(tA, tB):
-        bucket = (ti.bit_cast(projPos[i], ti.uint32) >> (sortRound * rsRadixW)) % rsRadix
-        rsCount[t, bucket] += 1
-
-    # Accumulate counts
-    # Each thread processes `rsRadix` elements
-    for t in range(rsThreads):
-      tA = rsRadix * t
-      x, y = tA // rsThreads, tA % rsThreads
-      s = 0
-      for i in range(rsRadix):
-        s += rsCount[y, x]
-        y += 1
-        if y == rsThreads: x, y = x + 1, 0
-      rsBlockSum[t] = s
-    for _ in range(1):
-      s = 0
-      for t in range(rsThreads):
-        rsBlockSum[t], s = s, s + rsBlockSum[t]
-    for t in range(rsThreads):
-      tA = rsRadix * t
-      x, y = tA // rsThreads, tA % rsThreads
-      s = rsBlockSum[t]
-      for i in range(rsRadix):
-        rsCount[y, x], s = s, s + rsCount[y, x]
-        y += 1
-        if y == rsThreads: x, y = x + 1, 0
-
-    # Place
-    for t in range(rsThreads):
-      tA = N * t // rsThreads
-      tB = N * (t+1) // rsThreads
-      for i in range(tA, tB):
-        bucket = (ti.bit_cast(projPos[i], ti.uint32) >> (sortRound * rsRadixW)) % rsRadix
-        pos = ti.atomic_add(rsCount[t, bucket], 1)
-        rsTempProjIdx[pos] = projIdx[i]
-        rsTempProjPos[pos] = projPos[i]
-    for i in range(N):
-      projIdx[i] = rsTempProjIdx[i]
-      projPos[i] = rsTempProjPos[i]
+  for sortRound in ti.static(range(0, (32 + rsRadixW - 1) // rsRadixW, 2)):
+    sortPass(sortRound + 0, projPos, projIdx, rsTempProjPos, rsTempProjIdx)
+    sortPass(sortRound + 1, rsTempProjPos, rsTempProjIdx, projPos, projIdx)
 
   # Unflip
   for i in range(N):
