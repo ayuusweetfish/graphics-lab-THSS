@@ -17,7 +17,7 @@ EtaB = 0.3
 
 Vmax = 3
 
-N = 888#88
+N = 8888#8
 x0 = ti.Vector.field(3, float)
 m = ti.field(float)
 x = ti.Vector.field(3, float)
@@ -40,7 +40,7 @@ rsTempProjIdx = ti.field(int)
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N).place(rsTempProjPos, rsTempProjIdx)
 
-M = 111#11
+M = 1111#1
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
 bodyVel = ti.Vector.field(3, float)
@@ -361,51 +361,87 @@ import numpy as np
 boundVerts.from_numpy(np.array(boundVertsL, dtype=np.float32))
 boundInds0.from_numpy(np.array(boundInds0L, dtype=np.int32))
 
-PDCBPlanarSubdiv = 12
-PDCBOrthoSubdiv = 6
-NumVerts = M * PDCBPlanarSubdiv*PDCBOrthoSubdiv
-NumTris = M * PDCBPlanarSubdiv*PDCBOrthoSubdiv*2
+TorusPlSd = 12
+TorusOrSd = 12
+HemisPlSd = 6
+HemisOrSd = 4
+PDCBNumVerts = TorusPlSd*TorusOrSd + 2 * (HemisPlSd*(HemisOrSd+1) + 1)
+PDCBNumTris = TorusPlSd*TorusOrSd*2 + 2 * (HemisPlSd*(HemisOrSd*2+1))
+NumVerts = M * PDCBNumVerts
+NumTris = M * PDCBNumTris
 particleVerts = ti.Vector.field(3, float, NumVerts)
 particleVertStart = ti.field(int, M)
 particleVertInds = ti.field(int, NumTris * 3)
 
-pdcbInitPos = ti.Vector.field(3, float, PDCBPlanarSubdiv*PDCBOrthoSubdiv)
+pdcbInitPos = ti.Vector.field(3, float, PDCBNumVerts)
 
 @ti.kernel
 def buildMesh():
-  for p in range(PDCBPlanarSubdiv):
-    theta = math.pi*2 / PDCBPlanarSubdiv * p
+  # Torus
+  for p in range(TorusPlSd):
+    theta = math.pi*2 / TorusPlSd * p
     sinTheta = ti.sin(theta)
     cosTheta = ti.cos(theta)
     centre = ti.Vector([cosTheta * R*2, sinTheta * R*2, 0])
     radial = ti.Vector([cosTheta * R, sinTheta * R, 0])
     up = ti.Vector([0, 0, R])
-    for q in range(PDCBOrthoSubdiv):
-      phi = math.pi*2 / PDCBOrthoSubdiv * q
+    for q in range(TorusOrSd):
+      phi = math.pi*2 / TorusOrSd * q
       sinPhi = ti.sin(phi)
       cosPhi = ti.cos(phi)
-      pdcbInitPos[p*PDCBOrthoSubdiv + q] = centre + radial * cosPhi + up * sinPhi
+      pdcbInitPos[p*TorusOrSd + q] = centre + radial * cosPhi + up * sinPhi
+  # Handles
+  for h in range(2):
+    base = TorusPlSd*TorusOrSd + h * (HemisPlSd*(HemisOrSd+1) + 1)
+    for p in range(-1, HemisOrSd + 1):
+      radius = (1 if p == -1 else ti.cos(math.pi/2 * p/HemisOrSd)) * R
+      radial = ti.Vector([0, 0, radius])
+      up = ti.Vector([0, radius, 0])
+      cx = (2 if p == -1 else 3 + ti.sin(p/HemisOrSd)) * R
+      centre = ti.Vector([cx, 0, 0])
+      for q in range(HemisPlSd if p < HemisOrSd else 1):
+        phi = math.pi*2 / HemisPlSd * q
+        sinPhi = ti.sin(phi)
+        cosPhi = ti.cos(phi)
+        pdcbInitPos[base + (p+1)*HemisPlSd + q] = (
+          centre + radial * cosPhi + up * sinPhi
+        ) * (h*2 - 1)
   vertCount = 0
   indCount = 0
   for i in range(M):
-    vertStart = ti.atomic_add(vertCount, PDCBPlanarSubdiv*PDCBOrthoSubdiv)
-    indStart = ti.atomic_add(indCount, PDCBPlanarSubdiv*PDCBOrthoSubdiv*6)
+    vertStart = ti.atomic_add(vertCount, PDCBNumVerts)
+    indStart = ti.atomic_add(indCount, PDCBNumTris*3)
     particleVertStart[i] = vertStart
     indIdx = 0
-    for p, q in ti.ndrange(PDCBPlanarSubdiv, PDCBOrthoSubdiv):
-      particleVertInds[indStart + indIdx + 0] = vertStart + p*PDCBOrthoSubdiv + q
-      particleVertInds[indStart + indIdx + 1] = vertStart + p*PDCBOrthoSubdiv + (q+1)%PDCBOrthoSubdiv
-      particleVertInds[indStart + indIdx + 2] = vertStart + ((p+1)%PDCBPlanarSubdiv)*PDCBOrthoSubdiv + q
-      particleVertInds[indStart + indIdx + 4] = vertStart + ((p+1)%PDCBPlanarSubdiv)*PDCBOrthoSubdiv + q
-      particleVertInds[indStart + indIdx + 3] = vertStart + ((p+1)%PDCBPlanarSubdiv)*PDCBOrthoSubdiv + (q+1)%PDCBOrthoSubdiv
-      particleVertInds[indStart + indIdx + 5] = vertStart + p*PDCBOrthoSubdiv + (q+1)%PDCBOrthoSubdiv
+    for p, q in ti.ndrange(TorusPlSd, TorusOrSd):
+      particleVertInds[indStart + indIdx + 0] = vertStart + p*TorusOrSd + q
+      particleVertInds[indStart + indIdx + 1] = vertStart + p*TorusOrSd + (q+1)%TorusOrSd
+      particleVertInds[indStart + indIdx + 2] = vertStart + ((p+1)%TorusPlSd)*TorusOrSd + q
+      particleVertInds[indStart + indIdx + 4] = vertStart + ((p+1)%TorusPlSd)*TorusOrSd + q
+      particleVertInds[indStart + indIdx + 3] = vertStart + ((p+1)%TorusPlSd)*TorusOrSd + (q+1)%TorusOrSd
+      particleVertInds[indStart + indIdx + 5] = vertStart + p*TorusOrSd + (q+1)%TorusOrSd
       indIdx += 6
+    for h in range(2):
+      base = vertStart + TorusPlSd*TorusOrSd + h * (HemisPlSd*(HemisOrSd+1) + 1)
+      for p in range(-1, HemisOrSd):
+        for q in range(HemisPlSd):
+          nextLevelQ0 = q if p < HemisOrSd - 1 else 0
+          nextLevelQ1 = (q+1)%HemisPlSd if p < HemisOrSd - 1 else 0
+          particleVertInds[indStart + indIdx + 0] = base + (p+1)*HemisPlSd + q
+          particleVertInds[indStart + indIdx + 1] = base + (p+1)*HemisPlSd + (q+1)%HemisPlSd
+          particleVertInds[indStart + indIdx + 2] = base + (p+2)*HemisPlSd + nextLevelQ0
+          if p < HemisOrSd - 1:
+            particleVertInds[indStart + indIdx + 4] = base + (p+2)*HemisPlSd + nextLevelQ0
+            particleVertInds[indStart + indIdx + 3] = base + (p+2)*HemisPlSd + nextLevelQ1
+            particleVertInds[indStart + indIdx + 5] = base + (p+1)*HemisPlSd + (q+1)%HemisPlSd
+            indIdx += 3
+          indIdx += 3
 
 @ti.kernel
 def updateMesh():
   for i in range(M):
     vertStart = particleVertStart[i]
-    for j in range(PDCBPlanarSubdiv*PDCBOrthoSubdiv):
+    for j in range(PDCBNumVerts):
       particleVerts[vertStart + j] = (
         quat_rot(pdcbInitPos[j], bodyOri[i]) + bodyPos[i]
       )
@@ -426,13 +462,14 @@ while window.running:
 
   #camera.position(10, 1, 20)
   camera.position(4, 5, 6)
+  #camera.position(-1, 1, 1)
   camera.lookat(0, 0, 0)
   scene.set_camera(camera)
 
   scene.point_light(pos=(0.5, 1, 2), color=(0.5, 0.5, 0.5))
   scene.ambient_light(color=(0.5, 0.5, 0.5))
   scene.mesh(boundVerts, indices=boundInds0, color=(0.65, 0.65, 0.5), two_sided=True)
-  scene.particles(x, radius=R*2, color=(0.6, 0.7, 1))
+  #scene.particles(x, radius=R*2, color=(0.6, 0.7, 1))
   scene.mesh(particleVerts, indices=particleVertInds, color=(0.7, 0.8, 0.7), two_sided=True)
   canvas.scene(scene)
   window.show()
