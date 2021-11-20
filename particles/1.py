@@ -17,7 +17,7 @@ EtaB = 0.3
 
 Vmax = 3
 
-N = 8888#8
+N = 888#88
 x0 = ti.Vector.field(3, float)
 m = ti.field(float)
 x = ti.Vector.field(3, float)
@@ -30,7 +30,7 @@ ti.root.dense(ti.i, N).place(x0, m, x, v, elas, radius, body)
 projIdx = ti.field(int)
 projPos = ti.field(float)
 ti.root.dense(ti.i, N).place(projPos, projIdx)
-rsThreads = N // 200 + 1
+rsThreads = int(N**0.5) + 1
 rsRadixW = 8
 rsRadix = 1 << rsRadixW
 rsBlockSum = ti.field(int, (rsThreads,))
@@ -40,7 +40,7 @@ rsTempProjIdx = ti.field(int)
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N).place(rsTempProjPos, rsTempProjIdx)
 
-M = 1111#1
+M = 111#11
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
 bodyVel = ti.Vector.field(3, float)
@@ -361,49 +361,51 @@ import numpy as np
 boundVerts.from_numpy(np.array(boundVertsL, dtype=np.float32))
 boundInds0.from_numpy(np.array(boundInds0L, dtype=np.int32))
 
-NumVerts = M * 144
-NumTris = M * 288
+PDCBPlanarSubdiv = 12
+PDCBOrthoSubdiv = 6
+NumVerts = M * PDCBPlanarSubdiv*PDCBOrthoSubdiv
+NumTris = M * PDCBPlanarSubdiv*PDCBOrthoSubdiv*2
 particleVerts = ti.Vector.field(3, float, NumVerts)
 particleVertStart = ti.field(int, M)
 particleVertInds = ti.field(int, NumTris * 3)
 
-pdcbInitPos = ti.Vector.field(3, float, 144)
+pdcbInitPos = ti.Vector.field(3, float, PDCBPlanarSubdiv*PDCBOrthoSubdiv)
 
 @ti.kernel
 def buildMesh():
-  for p in range(12):
-    theta = math.pi*2 / 12 * p
+  for p in range(PDCBPlanarSubdiv):
+    theta = math.pi*2 / PDCBPlanarSubdiv * p
     sinTheta = ti.sin(theta)
     cosTheta = ti.cos(theta)
     centre = ti.Vector([cosTheta * R*2, sinTheta * R*2, 0])
     radial = ti.Vector([cosTheta * R, sinTheta * R, 0])
     up = ti.Vector([0, 0, R])
-    for q in range(12):
-      theta = math.pi*2 / 12 * q
-      sinTheta = ti.sin(theta)
-      cosTheta = ti.cos(theta)
-      pdcbInitPos[p*12 + q] = centre + radial * cosTheta + up * sinTheta
+    for q in range(PDCBOrthoSubdiv):
+      phi = math.pi*2 / PDCBOrthoSubdiv * q
+      sinPhi = ti.sin(phi)
+      cosPhi = ti.cos(phi)
+      pdcbInitPos[p*PDCBOrthoSubdiv + q] = centre + radial * cosPhi + up * sinPhi
   vertCount = 0
   indCount = 0
   for i in range(M):
-    vertStart = ti.atomic_add(vertCount, 144)
-    indStart = ti.atomic_add(indCount, 864)
+    vertStart = ti.atomic_add(vertCount, PDCBPlanarSubdiv*PDCBOrthoSubdiv)
+    indStart = ti.atomic_add(indCount, PDCBPlanarSubdiv*PDCBOrthoSubdiv*6)
     particleVertStart[i] = vertStart
     indIdx = 0
-    for p, q in ti.ndrange(12, 12):
-      particleVertInds[indStart + indIdx + 0] = vertStart + p*12 + q
-      particleVertInds[indStart + indIdx + 1] = vertStart + p*12 + (q+1)%12
-      particleVertInds[indStart + indIdx + 2] = vertStart + ((p+1)%12)*12 + q
-      particleVertInds[indStart + indIdx + 4] = vertStart + ((p+1)%12)*12 + q
-      particleVertInds[indStart + indIdx + 3] = vertStart + ((p+1)%12)*12 + (q+1)%12
-      particleVertInds[indStart + indIdx + 5] = vertStart + p*12 + (q+1)%12
+    for p, q in ti.ndrange(PDCBPlanarSubdiv, PDCBOrthoSubdiv):
+      particleVertInds[indStart + indIdx + 0] = vertStart + p*PDCBOrthoSubdiv + q
+      particleVertInds[indStart + indIdx + 1] = vertStart + p*PDCBOrthoSubdiv + (q+1)%PDCBOrthoSubdiv
+      particleVertInds[indStart + indIdx + 2] = vertStart + ((p+1)%PDCBPlanarSubdiv)*PDCBOrthoSubdiv + q
+      particleVertInds[indStart + indIdx + 4] = vertStart + ((p+1)%PDCBPlanarSubdiv)*PDCBOrthoSubdiv + q
+      particleVertInds[indStart + indIdx + 3] = vertStart + ((p+1)%PDCBPlanarSubdiv)*PDCBOrthoSubdiv + (q+1)%PDCBOrthoSubdiv
+      particleVertInds[indStart + indIdx + 5] = vertStart + p*PDCBOrthoSubdiv + (q+1)%PDCBOrthoSubdiv
       indIdx += 6
 
 @ti.kernel
 def updateMesh():
   for i in range(M):
     vertStart = particleVertStart[i]
-    for j in range(144):
+    for j in range(PDCBPlanarSubdiv*PDCBOrthoSubdiv):
       particleVerts[vertStart + j] = (
         quat_rot(pdcbInitPos[j], bodyOri[i]) + bodyPos[i]
       )
@@ -429,7 +431,7 @@ while window.running:
 
   scene.point_light(pos=(0.5, 1, 2), color=(0.5, 0.5, 0.5))
   scene.ambient_light(color=(0.5, 0.5, 0.5))
-  #scene.mesh(boundVerts, indices=boundInds0, color=(0.65, 0.65, 0.5), two_sided=True)
+  scene.mesh(boundVerts, indices=boundInds0, color=(0.65, 0.65, 0.5), two_sided=True)
   scene.particles(x, radius=R*2, color=(0.6, 0.7, 1))
   scene.mesh(particleVerts, indices=particleVertInds, color=(0.7, 0.8, 0.7), two_sided=True)
   canvas.scene(scene)
