@@ -2,6 +2,8 @@ import taichi as ti
 import taichi_glsl as ts
 ti.init(arch=ti.vulkan)
 
+import math
+
 dt = 1.0 / 600
 R = 0.05
 G = 1.5
@@ -15,7 +17,7 @@ EtaB = 0.3
 
 Vmax = 3
 
-N = 77777
+N = 8888#8
 x0 = ti.Vector.field(3, float)
 m = ti.field(float)
 x = ti.Vector.field(3, float)
@@ -38,7 +40,7 @@ rsTempProjIdx = ti.field(int)
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N).place(rsTempProjPos, rsTempProjIdx)
 
-M = 11111
+M = 1111#1
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
 bodyVel = ti.Vector.field(3, float)
@@ -60,19 +62,20 @@ ldebug = ti.field(float, (512,))
 @ti.kernel
 def init():
   for i in range(M):
-    x0[i * 7 + 0] = ti.Vector([2.0, 0.0, 0.0]) * (R * 0.9)
-    x0[i * 7 + 1] = ti.Vector([-2.0, 0.0, 0.0]) * (R * 0.9)
-    x0[i * 7 + 2] = ti.Vector([1.0, 3.0**0.5, 0.0]) * (R * 0.9)
-    x0[i * 7 + 3] = ti.Vector([1.0, -3.0**0.5, 0.0]) * (R * 0.9)
-    x0[i * 7 + 4] = ti.Vector([-1.0, 3.0**0.5, 0.0]) * (R * 0.9)
-    x0[i * 7 + 5] = ti.Vector([-1.0, -3.0**0.5, 0.0]) * (R * 0.9)
-    x0[i * 7 + 6] = ti.Vector([4.0, 0.0, 0.0]) * (R * 0.9)
+    x0[i * 8 + 0] = ti.Vector([2.0, 0.0, 0.0]) * R
+    x0[i * 8 + 1] = ti.Vector([-2.0, 0.0, 0.0]) * R
+    x0[i * 8 + 2] = ti.Vector([1.0, 3.0**0.5, 0.0]) * R
+    x0[i * 8 + 3] = ti.Vector([1.0, -3.0**0.5, 0.0]) * R
+    x0[i * 8 + 4] = ti.Vector([-1.0, 3.0**0.5, 0.0]) * R
+    x0[i * 8 + 5] = ti.Vector([-1.0, -3.0**0.5, 0.0]) * R
+    x0[i * 8 + 6] = ti.Vector([4.0, 0.0, 0.0]) * R
+    x0[i * 8 + 7] = ti.Vector([-4.0, 0.0, 0.0]) * R
     bodyPos[i] = ti.Vector([
       -0.5 + R * 1.8 * (i % 11),
       R * 6.4 * float(i // 11) + R,
       R * 0.4 * (i % 7),
     ])
-    bodyIdx[i] = ti.Vector([i * 7, i * 7 + 7])
+    bodyIdx[i] = ti.Vector([i * 8, i * 8 + 8])
     bodyVel[i] = ti.Vector([-0.2, ti.random() * 0.5, 0])
     bodyAcc[i] = ti.Vector([0, 0, 0])
     bodyAng[i] = ti.Vector([0, 0, 0])
@@ -82,16 +85,16 @@ def init():
     ine = ti.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
     # Normalize position
     cm = ti.Vector([0.0, 0.0, 0.0])
-    for j in range(i * 7, i * 7 + 7):
+    for j in range(i * 8, i * 8 + 8):
       body[j] = i
       elas[j] = 1
       m[j] = 5
       radius[j] = R
       bodyMas[i] += m[j]
       cm += m[j] * x0[j]
-    cm /= 7
-    for j in range(i * 7, i * 7 + 7): x0[j] -= cm
-    for j in range(i * 7, i * 7 + 7):
+    cm /= 8
+    for j in range(i * 8, i * 8 + 8): x0[j] -= cm
+    for j in range(i * 8, i * 8 + 8):
       for p, q in ti.static(ti.ndrange(3, 3)):
         ine[p, q] -= m[j] * x0[j][p] * x0[j][q]
         if p == q:
@@ -358,7 +361,55 @@ import numpy as np
 boundVerts.from_numpy(np.array(boundVertsL, dtype=np.float32))
 boundInds0.from_numpy(np.array(boundInds0L, dtype=np.int32))
 
+NumVerts = M * 144
+NumTris = M * 288
+particleVerts = ti.Vector.field(3, float, NumVerts)
+particleVertStart = ti.field(int, M)
+particleVertInds = ti.field(int, NumTris * 3)
+
+pdcbInitPos = ti.Vector.field(3, float, 144)
+
+@ti.kernel
+def buildMesh():
+  for p in range(12):
+    theta = math.pi*2 / 12 * p
+    sinTheta = ti.sin(theta)
+    cosTheta = ti.cos(theta)
+    centre = ti.Vector([cosTheta * R*2, sinTheta * R*2, 0])
+    radial = ti.Vector([cosTheta * R, sinTheta * R, 0])
+    up = ti.Vector([0, 0, R])
+    for q in range(12):
+      theta = math.pi*2 / 12 * q
+      sinTheta = ti.sin(theta)
+      cosTheta = ti.cos(theta)
+      pdcbInitPos[p*12 + q] = centre + radial * cosTheta + up * sinTheta
+  vertCount = 0
+  indCount = 0
+  for i in range(M):
+    vertStart = ti.atomic_add(vertCount, 144)
+    indStart = ti.atomic_add(indCount, 864)
+    particleVertStart[i] = vertStart
+    indIdx = 0
+    for p, q in ti.ndrange(12, 12):
+      particleVertInds[indStart + indIdx + 0] = vertStart + p*12 + q
+      particleVertInds[indStart + indIdx + 1] = vertStart + p*12 + (q+1)%12
+      particleVertInds[indStart + indIdx + 2] = vertStart + ((p+1)%12)*12 + q
+      particleVertInds[indStart + indIdx + 4] = vertStart + ((p+1)%12)*12 + q
+      particleVertInds[indStart + indIdx + 3] = vertStart + ((p+1)%12)*12 + (q+1)%12
+      particleVertInds[indStart + indIdx + 5] = vertStart + p*12 + (q+1)%12
+      indIdx += 6
+
+@ti.kernel
+def updateMesh():
+  for i in range(M):
+    vertStart = particleVertStart[i]
+    for j in range(144):
+      particleVerts[vertStart + j] = (
+        quat_rot(pdcbInitPos[j], bodyOri[i]) + bodyPos[i]
+      )
+
 init()
+buildMesh()
 
 window = ti.ui.Window('Collision', (1280, 720), vsync=True)
 canvas = window.get_canvas()
@@ -369,6 +420,7 @@ step()
 while window.running:
   for i in range(10): step()
   #for i in range(50): stepsort()
+  updateMesh()
 
   #camera.position(10, 1, 20)
   camera.position(4, 5, 6)
@@ -377,8 +429,9 @@ while window.running:
 
   scene.point_light(pos=(0.5, 1, 2), color=(0.5, 0.5, 0.5))
   scene.ambient_light(color=(0.5, 0.5, 0.5))
-  scene.mesh(boundVerts, indices=boundInds0, color=(0.65, 0.65, 0.5), two_sided=True)
+  #scene.mesh(boundVerts, indices=boundInds0, color=(0.65, 0.65, 0.5), two_sided=True)
   scene.particles(x, radius=R*2, color=(0.6, 0.7, 1))
+  scene.mesh(particleVerts, indices=particleVertInds, color=(0.7, 0.8, 0.7), two_sided=True)
   canvas.scene(scene)
   window.show()
   # print(debug)
