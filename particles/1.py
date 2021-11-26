@@ -56,6 +56,8 @@ ti.root.dense(ti.i, M).place(
   fSum, tSum,
 )
 
+pullCloseInput = ti.field(int, (3,))
+
 gridSize = R * 10
 maxCoord = 1000
 
@@ -371,6 +373,11 @@ def step():
     # Integration
     # Translational: Verlet integration
     newAcc = f / bodyMas[b]
+    # Pulling?
+    if pullCloseInput[0] > 0: newAcc.z += bodyPos[b].z * -2.0
+    if pullCloseInput[1] > 0: newAcc.x += bodyPos[b].x * -2.0
+    if pullCloseInput[2] > 0:
+      newAcc += ti.Vector([0.0, 1.0, 0.0]).cross(bodyPos[b]) * 2.0
     bodyVel[b] += (bodyAcc[b] + newAcc) * 0.5 * dt
     Vnorm = bodyVel[b].norm()
     if Vnorm >= Vmax: bodyVel[b] *= Vmax / Vnorm
@@ -386,6 +393,15 @@ def step():
       dqv = ti.sin(theta / 2) * bodyAng[b].normalized()
       dq = ti.Vector([dqv.x, dqv.y, dqv.z, dqw])
       bodyOri[b] = quat_mul(dq, bodyOri[b])
+
+@ti.kernel
+def sweepIn(baseAngle: ti.float32):
+  a = baseAngle + ti.random() * 0.01
+  d = ti.Vector([ti.cos(a), 0, ti.sin(a)])
+  for i in range(M):
+    perp = bodyPos[i] - d * bodyPos[i].dot(d)
+    delta = perp.normalized() * -2.0
+    bodyVel[i] += delta
 
 boundVertsL = [
   [-100, -0, -100],
@@ -500,6 +516,14 @@ camera = ti.ui.make_camera()
 
 step()
 while window.running:
+  #if window.get_event(ti.ui.PRESS):
+  #  if window.event.key == ' ': sweepIn(0)
+  #  if window.event.key == ti.ui.RETURN: sweepIn(math.pi / 2)
+  pullCloseInput[0] = 1 if window.is_pressed(ti.ui.UP) else 0
+  pullCloseInput[1] = 1 if window.is_pressed(ti.ui.LEFT) else 0
+  pullCloseInput[2] = 1 if window.is_pressed(ti.ui.SPACE) else 0
+  print(pullCloseInput)
+
   for i in range(10): step()
   #for i in range(50): stepsort(N)
   updateMesh()
