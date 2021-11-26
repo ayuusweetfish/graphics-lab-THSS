@@ -4,39 +4,46 @@ ti.init(arch=ti.vulkan)
 
 import math
 
-dt = 1.0 / 600
-R = 0.05
-G = 1.5
+dt = 1.0 / 600  # Time step
 
-Ks = 3000
-Eta = 60
-Kt = 1
-Mu = 0.2
-KsB = 10000
-EtaB = 0.3
+R = 0.05  # Maximum particle radius
+G = 1.5   # Gravity
 
+Ks = 3000   # Repulsive force coefficient
+Eta = 60    # Damping force coefficient
+Kt = 1      # Shearing force coefficient
+Mu = 0.2    # Friction coefficient
+KsB = 10000 # Repulsive force coefficient for the floor
+EtaB = 0.3  # Instantaneous impulse coefficient for the floor
+
+# Maximum linear velocity and angular velocity
 Vmax = 3
+Amax = math.pi * 2
 
+# N = number of particles
 N = 8888#8
-x0 = ti.Vector.field(3, float)
-m = ti.field(float)
-x = ti.Vector.field(3, float)
-v = ti.Vector.field(3, float)
-elas = ti.field(float)
-radius = ti.field(float)
-body = ti.field(int)
+x0 = ti.Vector.field(3, float)  # Position relative to body origin
+m = ti.field(float)             # Mass
+x = ti.Vector.field(3, float)   # World position
+v = ti.Vector.field(3, float)   # Velocity
+elas = ti.field(float)          # Elasticity
+radius = ti.field(float)        # Radius
+body = ti.field(int)            # Index of corresponding rigid body
 ti.root.dense(ti.i, N).place(x0, m, x, v, elas, radius, body)
 
-projIdx = ti.field(int)
-projPos = ti.field(float)
+# Radix sorting
+projIdx = ti.field(int)     # Particle index, see processing logic in step()
+projPos = ti.field(float)   # Particle coordinate along sweep line
 ti.root.dense(ti.i, N * 2).place(projPos, projIdx)
-rsThreads = int(N**0.5) + 1
-rsRadixW = 8
-rsRadix = 1 << rsRadixW
-rsBlockSum = ti.field(int, (rsThreads,))
-rsCount = ti.field(int)
+
+rsThreads = 2 * int(N**0.5) + 1   # Number of threads during sorting
+
+rsRadixW = 8            # Radix width, in binary bits
+rsRadix = 1 << rsRadixW # Radix
+rsBlockSum = ti.field(int, (rsThreads,))  # Scratch space, see sorting subroutine
+rsCount = ti.field(int)   # Bucket counter for each thread
 ti.root.dense(ti.i, rsThreads).dense(ti.j, rsRadix).place(rsCount)
-rsTempProjIdx = ti.field(int)
+rsTempProjIdx = ti.field(int)   # Double buffering, see sorting subroutine
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N * 2).place(rsTempProjPos, rsTempProjIdx)
 
@@ -56,17 +63,21 @@ ti.root.dense(ti.i, M).place(
   fSum, tSum,
 )
 
-pullCloseInput = ti.field(int, (3,))
-
+# Space subdivision parameters
 gridSize = R * 10
 maxCoord = 1000
 
-debug = ti.field(float, (10,))
-ldebug = ti.field(float, (512,))
+# Array of 3 input buttons
+pullCloseInput = ti.field(int, (3,))
 
+# For passing values out during debugging sessions
+debug = ti.field(float, (10,))
+
+# Set up rigid bodies
 @ti.kernel
 def init():
   for i in range(M):
+    # Represent the torus-with-handles shape with eight particles
     scale = 0.6 + 0.4 * (i % 8) / 7
     x0[i * 8 + 0] = ti.Vector([2.0, 0.0, 0.0]) * (R * scale)
     x0[i * 8 + 1] = ti.Vector([-2.0, 0.0, 0.0]) * (R * scale)
@@ -106,8 +117,8 @@ def init():
         if p == q:
           ine[p, q] += m[j] * x0[j].norm() ** 2
     bodyIne[i] = ine.inverse()
-  for i in range(N): projIdx[i] = i
 
+# Quaternion multiplication
 @ti.func
 def quat_mul(a, b):
   av = a.xyz
@@ -116,6 +127,7 @@ def quat_mul(a, b):
   w = a.w * b.w - av.dot(bv)
   return ti.Vector([rv.x, rv.y, rv.z, w])
 
+# Rotation application to vector
 @ti.func
 def quat_rot(v, q):
   return quat_mul(quat_mul(
@@ -124,6 +136,7 @@ def quat_rot(v, q):
     ti.Vector([-q.x, -q.y, -q.z, q.w])
   ).xyz
 
+# Matrix representation of rotation
 @ti.func
 def quat_mat(q):
   x, y, z, w = q.x, q.y, q.z, q.w
@@ -133,6 +146,9 @@ def quat_mat(q):
     [2*x*z - 2*w*y, 2*y*z + 2*w*x, 1 - 2*x*x - 2*y*y]
   ])
 
+# Collision response between two particles `i` and `j`
+# All other arguments for particle `i` are prefetched for performance's sake,
+# as this does not change throughout an inner loop over `j`.
 @ti.func
 def colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi):
   bodyj = body[j]
@@ -151,15 +167,22 @@ def colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi):
       f += Etaelasi * elas[j] * relVel
       # Shear
       f += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
+      # Accumulate force and torque to respective bodies
       fSum[bodyi] += f
       tSum[bodyi] += (xi - bodyPos[bodyi]).cross(f)
       fSum[bodyj] -= f
       tSum[bodyj] -= (xj - bodyPos[bodyj]).cross(f)
 
+# A pass of radix sort
+# `N`: number of elements
+# `sortRound`: round number, i.e. sorting on the `sortRound`-th digit (base `rsRadix`)
+# `pos1`: values to be sorted (as u32)
+# `idx1`: tags to be moved around with values
+# `pos2`, `idx2`: buffer for sorted sequence
 @ti.func
 def sortPass(N, sortRound, pos1, idx1, pos2, idx2):
   for t, i in ti.ndrange(rsThreads, rsRadix): rsCount[t, i] = 0
-  # Count
+  # Bucket counting
   for t in range(rsThreads):
     tA = N * t // rsThreads
     tB = N * (t+1) // rsThreads
@@ -167,8 +190,10 @@ def sortPass(N, sortRound, pos1, idx1, pos2, idx2):
       bucket = (ti.bit_cast(pos1[i], ti.uint32) >> (sortRound * rsRadixW)) % rsRadix
       rsCount[t, bucket] += 1
 
-  # Accumulate counts
-  # Each thread processes `rsRadix` elements
+  # Prefix sum over `rsCount`, traversing digit-major.
+  # Each thread processes `rsRadix` elements as a continuous block.
+  # To prevent sequential dependency, calculates sums within each thread first
+  # and later distribute over threads.
   for t in range(rsThreads):
     tA = rsRadix * t
     x, y = tA // rsThreads, tA % rsThreads
@@ -191,7 +216,7 @@ def sortPass(N, sortRound, pos1, idx1, pos2, idx2):
       y += 1
       if y == rsThreads: x, y = x + 1, 0
 
-  # Place
+  # Permute all elements according to accumulated starting positions
   for t in range(rsThreads):
     tA = N * t // rsThreads
     tB = N * (t+1) // rsThreads
@@ -204,8 +229,12 @@ def sortPass(N, sortRound, pos1, idx1, pos2, idx2):
 
 @ti.func
 def sortProj(N):
+  # f32 values are processed prior to sorting
+  # so that radix sort can be performed directly on bit representation.
+  # For positive values, flips sign bit only;
+  # for negative values, flips all bits.
+
   # Flip
-  # https://github.com/liufububai/GPU-Sweep-Prune-Collision-Detection/blob/e86fca4a5418884a6694383f4391e23b389d07e8/sapDetection/radixsort.cu#L111
   for i in range(N):
     f = ti.bit_cast(projPos[i], ti.uint32)
     mask = -int(f >> 31) | 0x80000000
@@ -222,20 +251,18 @@ def sortProj(N):
     mask = (int(f >> 31) - 1) | 0x80000000
     projPos[i] = ti.bit_cast(f ^ mask, ti.float32)
 
-@ti.kernel
-def stepsort(sz: ti.i32):
-  sortProj(sz)
-
+# Cantor pairing function and unrigourous extension to the entire plane
 @ti.func
 def cantor(x, y):
   return (x + y) * (x + y + 1) / 2 + y
 @ti.func
 def cantorOmni(x, y):
-  base = cantor(abs(x), abs(y)) * 4
-  if x < 0: base += 2.0
-  if y < 0: base += 1.0
+  base = cantor(abs(x), abs(y)) * 2
+  if x < 0: base += 1.0
+  if y < 0: base = -base
   return base
 
+# One step of simulation
 @ti.kernel
 def step():
   # Calculate particle position and velocity
@@ -288,26 +315,31 @@ def step():
        else ti.Vector([axis.z, 0, -axis.x])
   coaxisP = coaxisP.normalized()
   coaxisQ = axis.cross(coaxisP) # Already unit vector
-  extraIdx = N
+  extraIdx = N  # Index to place the next repeated element
   for i in range(N):
     xi = x[i]
     ri = radius[i]
+    # Z: coordinate along the sweep line
+    # P, Q: coordinate along auxiliary 2D space perpendicular to the sweep line
     Z = xi.dot(axis)
     P = xi.dot(coaxisP)
     Q = xi.dot(coaxisQ)
+    # Space subdivision
     minP = ti.floor((P - ri) / gridSize)
     maxP = ti.ceil((P + ri) / gridSize)
     minQ = ti.floor((Q - ri) / gridSize)
     maxQ = ti.ceil((Q + ri) / gridSize)
     for curP in range(minP, maxP):
       for curQ in range(minQ, maxQ):
-        #idx = i if curP == minP and curQ == minQ else ti.atomic_add(extraIdx, 1)
+        # XXX: The following appears to be incorrectly interpreted. Report upstream?
+        # idx = i if curP == minP and curQ == minQ else ti.atomic_add(extraIdx, 1)
         idx = i
         if curP > minP or curQ > minQ: idx = ti.atomic_add(extraIdx, 1)
         flag = 0 if curP == minP and curQ == minQ else N
         gridId = cantorOmni(curP, curQ)
         projPos[idx] = Z + maxCoord * gridId
         projIdx[idx] = i + flag
+  # Sort
   sortProj(extraIdx)
 
   # Responses
@@ -323,7 +355,8 @@ def step():
         j = projIdx[pj]
         if j >= N: j -= N
         colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi)
-      #for pj in range(pi - 1, -1, -1):
+      # Taichi does not allow `range` with step argument
+      # for pj in range(pi - 1, -1, -1):
       for dpj in range(1, pi + 1):
         pj = pi - dpj
         if projPos[pj] < lwLimit: break
@@ -342,12 +375,14 @@ def step():
       f += grav
       t += (x[i] - bodyPos[b]).cross(grav)
 
-    # Impulse from boundaries
+    # Impulse from the floor
+    # Find the representative contacting particle
+    # which is determined by maximum velocity along the vertical axis
     boundaryY = 0.0
     boundaryYPart = 0
     for i in range(bodyIdx[b][0], bodyIdx[b][1]):
       if (abs(v[i].y) > abs(boundaryY) and
-          x[i].y < radius[i] and v[i].y < 0):
+          x[i].y < radius[i]):
         boundaryY = v[i].y
         boundaryYPart = i
 
@@ -356,6 +391,7 @@ def step():
       impF = ti.Vector([0.0, 0.0, 0.0])
       impF.y = -boundaryY * bodyMas[b] / dt * EtaB
       impF.y += KsB * (radius[i] - x[i].y)
+      # Friction
       paraV = v[i].xz.norm()
       fricF = max(-f.y, 0) * Mu
       if paraV >= 1e-5:
@@ -366,8 +402,8 @@ def step():
 
     # External pulling force
     pullF = ti.Vector([0.0, 0.0, 0.0])
-    if pullCloseInput[0] > 0: pullF += bodyPos[b].z * -2.0
-    if pullCloseInput[1] > 0: pullF += bodyPos[b].x * -2.0
+    if pullCloseInput[0] > 0: pullF.z += bodyPos[b].z * -2.0
+    if pullCloseInput[1] > 0: pullF.x += bodyPos[b].x * -2.0
     if pullCloseInput[2] > 0:
       pullF += ti.Vector([0.0, 1.0, 0.0]).cross(bodyPos[b]) * 2.0
       pullF += -bodyPos[b] * 1.5
@@ -379,49 +415,47 @@ def step():
     newAcc = f / bodyMas[b]
     bodyVel[b] += (bodyAcc[b] + newAcc) * 0.5 * dt
     Vnorm = bodyVel[b].norm()
-    if Vnorm >= Vmax: bodyVel[b] *= Vmax / Vnorm
+    if Vnorm > Vmax: bodyVel[b] *= Vmax / Vnorm
     bodyAcc[b] = newAcc
     bodyPos[b] += bodyVel[b] * dt + bodyAcc[b] * (0.5*dt*dt)
     # Rotational
     bodyAng[b] += t * dt
     rotMat = quat_mat(bodyOri[b])
-    angVel = (rotMat @ bodyIne[b] @ rotMat.transpose()).__matmul__(bodyAng[b])
-    if bodyAng[b].norm() >= 1e-5:
-      theta = bodyAng[b].norm() * dt
+    angVel = (rotMat @ bodyIne[b] @ rotMat.transpose()) @ bodyAng[b]
+    Anorm = angVel.norm()
+    if Anorm > Amax:
+      bodyAng[b] *= Amax / Anorm
+      angVel *= Amax / Anorm
+      Anorm = Amax
+    if Anorm >= 1e-5:
+      theta = Anorm * dt
       dqw = ti.cos(theta / 2)
-      dqv = ti.sin(theta / 2) * bodyAng[b].normalized()
+      dqv = ti.sin(theta / 2) * angVel.normalized()
       dq = ti.Vector([dqv.x, dqv.y, dqv.z, dqw])
       bodyOri[b] = quat_mul(dq, bodyOri[b])
 
-@ti.kernel
-def sweepIn(baseAngle: ti.float32):
-  a = baseAngle + ti.random() * 0.01
-  d = ti.Vector([ti.cos(a), 0, ti.sin(a)])
-  for i in range(M):
-    perp = bodyPos[i] - d * bodyPos[i].dot(d)
-    delta = perp.normalized() * -2.0
-    bodyVel[i] += delta
-
+# Vertices for floor
 boundVertsL = [
   [-100, -0, -100],
   [ 100, -0, -100],
   [ 100, -0,  100],
   [-100, -0,  100],
-
-  [-100,  0, -100],
-  [ 100,  0, -100],
-  [ 100,  0,  100],
-  [-100,  0,  100],
 ]
-boundIndsL = [0, 1, 2, 2, 3, 0]   # bottom
+boundIndsL = [0, 1, 2, 2, 3, 0]
 boundVerts = ti.Vector.field(3, float, len(boundVertsL))
 boundInds = ti.field(int, len(boundIndsL))
 import numpy as np
 boundVerts.from_numpy(np.array(boundVertsL, dtype=np.float32))
 boundInds.from_numpy(np.array(boundIndsL, dtype=np.int32))
 
-TorusPlSd = 12
-TorusOrSd = 12
+# Builder for the torus-with-handles shape,
+# which is abbreviated as PDCB (p-dichlorobenzene)
+# For details, plot the vertices in 3D and all should be visualized!
+
+# PlSd = Planar subdivision
+# OrSd = Orbital subdivision
+TorusPlSd = 12  # Approximate the skeleton with 12-sided polygon
+TorusOrSd = 12  # Approximate the section with 12-sided polygon
 HemisPlSd = 6
 HemisOrSd = 4
 PDCBNumVerts = TorusPlSd*TorusOrSd + 2 * (HemisPlSd*(HemisOrSd+1) + 1)
@@ -432,6 +466,7 @@ particleVerts = ti.Vector.field(3, float, NumVerts)
 particleVertStart = ti.field(int, M)
 particleVertInds = ti.field(int, NumTris * 3)
 
+# Initial positions (relative to local origin) of the shape
 pdcbInitPos = ti.Vector.field(3, float, PDCBNumVerts)
 
 @ti.kernel
@@ -496,6 +531,8 @@ def buildMesh():
             indIdx += 3
           indIdx += 3
 
+# Build the mesh for the entire scene
+# according to body position and orientation, and the precalculated shape
 @ti.kernel
 def updateMesh():
   for i in range(M):
@@ -521,13 +558,13 @@ while window.running:
   pullCloseInput[2] = 1 if window.is_pressed(ti.ui.SPACE) else 0
 
   for i in range(10): step()
-  #for i in range(50): stepsort(N)
   updateMesh()
 
   camera.position(4, 5, 6)
   camera.lookat(0, 0, 0)
   scene.set_camera(camera)
 
+  # Change floor colour according to input button states
   floorR, floorG, floorB = 0.7, 0.7, 0.7
   if pullCloseInput[0] == 1: floorR += 0.1
   if pullCloseInput[1] == 1: floorG += 0.07
@@ -540,4 +577,3 @@ while window.running:
   canvas.scene(scene)
   window.show()
   # print(debug)
-  # print(ldebug)
