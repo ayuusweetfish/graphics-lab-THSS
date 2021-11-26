@@ -27,9 +27,6 @@ radius = ti.field(float)
 body = ti.field(int)
 ti.root.dense(ti.i, N).place(x0, m, x, v, elas, radius, body)
 
-pp = ti.field(float, (N,))
-qq = ti.field(float, (N,))
-
 projIdx = ti.field(int)
 projPos = ti.field(float)
 ti.root.dense(ti.i, N * 2).place(projPos, projIdx)
@@ -60,7 +57,7 @@ ti.root.dense(ti.i, M).place(
 )
 
 gridSize = R * 10
-maxCoord = 10000
+maxCoord = 1000
 
 debug = ti.field(float, (10,))
 ldebug = ti.field(float, (512,))
@@ -82,11 +79,11 @@ def init():
       R * 0.4 * (i % 7),
     ])
     # ** For 2D testing **
-    bodyPos[i] = ti.Vector([
-      -0.5 + R * 4 * (i % 11),
-      R * 4 * float(i // 11) + R,
-      R * 3 * (i % 3),
-    ])
+    #bodyPos[i] = ti.Vector([
+    #  -0.5 + R * 5.4 * (i % 3),
+    #  R * 4 * float(i // 3) + R,
+    #  0,#R * 3 * (i % 3),
+    #])
     bodyIdx[i] = ti.Vector([i * 8, i * 8 + 8])
     bodyVel[i] = ti.Vector([-0.2, ti.random() * 0.5, 0])
     bodyAcc[i] = ti.Vector([0, 0, 0])
@@ -318,18 +315,26 @@ def step():
   debug[4] = extraIdx
 
   # Responses
-  colliCount = 0
   for pi in range(extraIdx):
     i = projIdx[pi]
     if i < N:
-      limit = projPos[pi] + R * 2
+      upLimit = projPos[pi] + R * 2
+      lwLimit = projPos[pi] - R * 2
       bodyi, radiusi, xi, vi = body[i], radius[i], x[i], v[i]
       Etaelasi = Eta * elas[i]
       for pj in range(pi + 1, extraIdx):
-        if projPos[pj] > limit: break
+        if projPos[pj] > upLimit: break
         j = projIdx[pj]
         if j >= N: j -= N
         colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi)
+      #for pj in range(pi - 1, -1, -1):
+      for dpj in range(1, pi + 1):
+        pj = pi - dpj
+        if projPos[pj] < lwLimit: break
+        j = projIdx[pj]
+        if j >= N:
+          j -= N
+          colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi)
 
   for b in range(M):
     f = fSum[b]
@@ -512,5 +517,5 @@ while window.running:
   scene.mesh(particleVerts, indices=particleVertInds, color=(0.7, 0.8, 0.7), two_sided=True)
   canvas.scene(scene)
   window.show()
-  print(debug)
+  # print(debug)
   # print(ldebug)
