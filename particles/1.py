@@ -27,9 +27,12 @@ radius = ti.field(float)
 body = ti.field(int)
 ti.root.dense(ti.i, N).place(x0, m, x, v, elas, radius, body)
 
+pp = ti.field(float, (N,))
+qq = ti.field(float, (N,))
+
 projIdx = ti.field(int)
 projPos = ti.field(float)
-ti.root.dense(ti.i, N).place(projPos, projIdx)
+ti.root.dense(ti.i, N * 2).place(projPos, projIdx)
 rsThreads = int(N**0.5) + 1
 rsRadixW = 8
 rsRadix = 1 << rsRadixW
@@ -38,7 +41,7 @@ rsCount = ti.field(int)
 ti.root.dense(ti.i, rsThreads).dense(ti.j, rsRadix).place(rsCount)
 rsTempProjIdx = ti.field(int)
 rsTempProjPos = ti.field(float)
-ti.root.dense(ti.i, N).place(rsTempProjPos, rsTempProjIdx)
+ti.root.dense(ti.i, N * 2).place(rsTempProjPos, rsTempProjIdx)
 
 M = 1111#1
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
@@ -55,6 +58,9 @@ ti.root.dense(ti.i, M).place(
   bodyIdx, bodyPos, bodyVel, bodyMas, bodyAcc, bodyOri, bodyIne, bodyAng,
   fSum, tSum,
 )
+
+gridSize = R * 10
+maxCoord = 10000
 
 debug = ti.field(float, (10,))
 ldebug = ti.field(float, (512,))
@@ -74,6 +80,12 @@ def init():
       -0.5 + R * 1.8 * (i % 11),
       R * 6.4 * float(i // 11) + R,
       R * 0.4 * (i % 7),
+    ])
+    # ** For 2D testing **
+    bodyPos[i] = ti.Vector([
+      -0.5 + R * 4 * (i % 11),
+      R * 4 * float(i // 11) + R,
+      R * 3 * (i % 3),
     ])
     bodyIdx[i] = ti.Vector([i * 8, i * 8 + 8])
     bodyVel[i] = ti.Vector([-0.2, ti.random() * 0.5, 0])
@@ -151,7 +163,7 @@ def colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi):
       tSum[bodyj] -= (xj - bodyPos[bodyj]).cross(f)
 
 @ti.func
-def sortPass(sortRound, pos1, idx1, pos2, idx2):
+def sortPass(N, sortRound, pos1, idx1, pos2, idx2):
   for t, i in ti.ndrange(rsThreads, rsRadix): rsCount[t, i] = 0
   # Count
   for t in range(rsThreads):
@@ -197,7 +209,7 @@ def sortPass(sortRound, pos1, idx1, pos2, idx2):
       rsCount[t, bucket] += 1
 
 @ti.func
-def sortProj():
+def sortProj(N):
   # Flip
   # https://github.com/liufububai/GPU-Sweep-Prune-Collision-Detection/blob/e86fca4a5418884a6694383f4391e23b389d07e8/sapDetection/radixsort.cu#L111
   for i in range(N):
@@ -207,8 +219,8 @@ def sortProj():
 
   # Radix sort
   for sortRound in ti.static(range(0, (32 + rsRadixW - 1) // rsRadixW, 2)):
-    sortPass(sortRound + 0, projPos, projIdx, rsTempProjPos, rsTempProjIdx)
-    sortPass(sortRound + 1, rsTempProjPos, rsTempProjIdx, projPos, projIdx)
+    sortPass(N, sortRound + 0, projPos, projIdx, rsTempProjPos, rsTempProjIdx)
+    sortPass(N, sortRound + 1, rsTempProjPos, rsTempProjIdx, projPos, projIdx)
 
   # Unflip
   for i in range(N):
@@ -217,8 +229,18 @@ def sortProj():
     projPos[i] = ti.bit_cast(f ^ mask, ti.float32)
 
 @ti.kernel
-def stepsort():
-  sortProj()
+def stepsort(sz: ti.i32):
+  sortProj(sz)
+
+@ti.func
+def cantor(x, y):
+  return (x + y) * (x + y + 1) / 2 + y
+@ti.func
+def cantorOmni(x, y):
+  base = cantor(abs(x), abs(y)) * 4
+  if x < 0: base += 2.0
+  if y < 0: base += 1.0
+  return base
 
 @ti.kernel
 def step():
@@ -268,29 +290,46 @@ def step():
 
   # Sweep and prune
   axis = eigenvector
+  coaxisP = ti.Vector([axis.y, -axis.x, 0]) if axis.z == 0 \
+       else ti.Vector([axis.z, 0, -axis.x])
+  coaxisP = coaxisP.normalized()
+  coaxisQ = axis.cross(coaxisP) # Already unit vector
+  extraIdx = N
   for i in range(N):
-    projPos[i] = x[projIdx[i]].dot(axis)
-  sortProj()
+    xi = x[i]
+    ri = radius[i]
+    Z = xi.dot(axis)
+    P = xi.dot(coaxisP)
+    Q = xi.dot(coaxisQ)
+    minP = ti.floor((P - ri) / gridSize)
+    maxP = ti.ceil((P + ri) / gridSize)
+    minQ = ti.floor((Q - ri) / gridSize)
+    maxQ = ti.ceil((Q + ri) / gridSize)
+    for curP in range(minP, maxP):
+      for curQ in range(minQ, maxQ):
+        #idx = i if curP == minP and curQ == minQ else ti.atomic_add(extraIdx, 1)
+        idx = i
+        if curP > minP or curQ > minQ: idx = ti.atomic_add(extraIdx, 1)
+        flag = 0 if curP == minP and curQ == minQ else N
+        gridId = cantorOmni(curP, curQ)
+        projPos[idx] = Z + maxCoord * gridId
+        projIdx[idx] = i + flag
+  sortProj(extraIdx)
+  debug[4] = extraIdx
 
   # Responses
-  if True:
-    # debug[0] = float(N) * (N - 1) / 2
-    # debug[1] = 0
-    # aa = 0
-    # bb = 0
-    for pi in range(N):
-      i = projIdx[pi]
+  colliCount = 0
+  for pi in range(extraIdx):
+    i = projIdx[pi]
+    if i < N:
       limit = projPos[pi] + R * 2
       bodyi, radiusi, xi, vi = body[i], radius[i], x[i], v[i]
       Etaelasi = Eta * elas[i]
-      for pj in range(pi + 1, N):
+      for pj in range(pi + 1, extraIdx):
         if projPos[pj] > limit: break
         j = projIdx[pj]
-        # aa += 1
-        # if (x[i] - x[j]).norm() <= R * 2: bb += 1
+        if j >= N: j -= N
         colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi)
-    # debug[1] = aa
-    # debug[2] = bb
 
   for b in range(M):
     f = fSum[b]
@@ -457,12 +496,12 @@ camera = ti.ui.make_camera()
 step()
 while window.running:
   for i in range(10): step()
-  #for i in range(50): stepsort()
+  #for i in range(50): stepsort(N)
   updateMesh()
 
   #camera.position(10, 1, 20)
   camera.position(4, 5, 6)
-  #camera.position(-1, 1, 1)
+  #camera.position(0, 1, 6)
   camera.lookat(0, 0, 0)
   scene.set_camera(camera)
 
@@ -473,5 +512,5 @@ while window.running:
   scene.mesh(particleVerts, indices=particleVertInds, color=(0.7, 0.8, 0.7), two_sided=True)
   canvas.scene(scene)
   window.show()
-  # print(debug)
+  print(debug)
   # print(ldebug)
