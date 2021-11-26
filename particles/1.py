@@ -67,25 +67,20 @@ ldebug = ti.field(float, (512,))
 @ti.kernel
 def init():
   for i in range(M):
-    x0[i * 8 + 0] = ti.Vector([2.0, 0.0, 0.0]) * R
-    x0[i * 8 + 1] = ti.Vector([-2.0, 0.0, 0.0]) * R
-    x0[i * 8 + 2] = ti.Vector([1.0, 3.0**0.5, 0.0]) * R
-    x0[i * 8 + 3] = ti.Vector([1.0, -3.0**0.5, 0.0]) * R
-    x0[i * 8 + 4] = ti.Vector([-1.0, 3.0**0.5, 0.0]) * R
-    x0[i * 8 + 5] = ti.Vector([-1.0, -3.0**0.5, 0.0]) * R
-    x0[i * 8 + 6] = ti.Vector([4.0, 0.0, 0.0]) * R
-    x0[i * 8 + 7] = ti.Vector([-4.0, 0.0, 0.0]) * R
+    scale = 0.6 + 0.4 * (i % 8) / 7
+    x0[i * 8 + 0] = ti.Vector([2.0, 0.0, 0.0]) * (R * scale)
+    x0[i * 8 + 1] = ti.Vector([-2.0, 0.0, 0.0]) * (R * scale)
+    x0[i * 8 + 2] = ti.Vector([1.0, 3.0**0.5, 0.0]) * (R * scale)
+    x0[i * 8 + 3] = ti.Vector([1.0, -3.0**0.5, 0.0]) * (R * scale)
+    x0[i * 8 + 4] = ti.Vector([-1.0, 3.0**0.5, 0.0]) * (R * scale)
+    x0[i * 8 + 5] = ti.Vector([-1.0, -3.0**0.5, 0.0]) * (R * scale)
+    x0[i * 8 + 6] = ti.Vector([4.0, 0.0, 0.0]) * (R * scale)
+    x0[i * 8 + 7] = ti.Vector([-4.0, 0.0, 0.0]) * (R * scale)
     bodyPos[i] = ti.Vector([
       -0.5 + R * 1.8 * (i % 11),
       R * 6.4 * float(i // 11) + R,
       R * 0.4 * (i % 7),
     ])
-    # ** For 2D testing **
-    #bodyPos[i] = ti.Vector([
-    #  -0.5 + R * 5.4 * (i % 3),
-    #  R * 4 * float(i // 3) + R,
-    #  0,#R * 3 * (i % 3),
-    #])
     bodyIdx[i] = ti.Vector([i * 8, i * 8 + 8])
     bodyVel[i] = ti.Vector([-0.2, ti.random() * 0.5, 0])
     bodyAcc[i] = ti.Vector([0, 0, 0])
@@ -98,9 +93,9 @@ def init():
     cm = ti.Vector([0.0, 0.0, 0.0])
     for j in range(i * 8, i * 8 + 8):
       body[j] = i
-      elas[j] = 1
-      m[j] = 5
-      radius[j] = R
+      elas[j] = 1.0 - 0.4 * (i % 8) / 7
+      m[j] = 5 * (scale**3)
+      radius[j] = R * scale
       bodyMas[i] += m[j]
       cm += m[j] * x0[j]
     cm /= 8
@@ -314,7 +309,6 @@ def step():
         projPos[idx] = Z + maxCoord * gridId
         projIdx[idx] = i + flag
   sortProj(extraIdx)
-  debug[4] = extraIdx
 
   # Responses
   for pi in range(extraIdx):
@@ -370,14 +364,19 @@ def step():
       f += impF
       t += (x[i] - bodyPos[b]).cross(impF)
 
+    # External pulling force
+    pullF = ti.Vector([0.0, 0.0, 0.0])
+    if pullCloseInput[0] > 0: pullF += bodyPos[b].z * -2.0
+    if pullCloseInput[1] > 0: pullF += bodyPos[b].x * -2.0
+    if pullCloseInput[2] > 0:
+      pullF += ti.Vector([0.0, 1.0, 0.0]).cross(bodyPos[b]) * 2.0
+      pullF += -bodyPos[b] * 1.5
+    pullF *= bodyMas[b]
+    f += pullF
+
     # Integration
     # Translational: Verlet integration
     newAcc = f / bodyMas[b]
-    # Pulling?
-    if pullCloseInput[0] > 0: newAcc.z += bodyPos[b].z * -2.0
-    if pullCloseInput[1] > 0: newAcc.x += bodyPos[b].x * -2.0
-    if pullCloseInput[2] > 0:
-      newAcc += ti.Vector([0.0, 1.0, 0.0]).cross(bodyPos[b]) * 2.0
     bodyVel[b] += (bodyAcc[b] + newAcc) * 0.5 * dt
     Vnorm = bodyVel[b].norm()
     if Vnorm >= Vmax: bodyVel[b] *= Vmax / Vnorm
@@ -414,12 +413,12 @@ boundVertsL = [
   [ 100,  0,  100],
   [-100,  0,  100],
 ]
-boundInds0L = [0, 1, 2, 2, 3, 0]  # bottom
+boundIndsL = [0, 1, 2, 2, 3, 0]   # bottom
 boundVerts = ti.Vector.field(3, float, len(boundVertsL))
-boundInds0 = ti.field(int, len(boundInds0L))
+boundInds = ti.field(int, len(boundIndsL))
 import numpy as np
 boundVerts.from_numpy(np.array(boundVertsL, dtype=np.float32))
-boundInds0.from_numpy(np.array(boundInds0L, dtype=np.int32))
+boundInds.from_numpy(np.array(boundIndsL, dtype=np.int32))
 
 TorusPlSd = 12
 TorusOrSd = 12
@@ -501,9 +500,10 @@ def buildMesh():
 def updateMesh():
   for i in range(M):
     vertStart = particleVertStart[i]
+    scale = 0.6 + 0.4 * (i % 8) / 7
     for j in range(PDCBNumVerts):
       particleVerts[vertStart + j] = (
-        quat_rot(pdcbInitPos[j], bodyOri[i]) + bodyPos[i]
+        quat_rot(pdcbInitPos[j] * scale, bodyOri[i]) + bodyPos[i]
       )
 
 init()
@@ -516,29 +516,27 @@ camera = ti.ui.make_camera()
 
 step()
 while window.running:
-  #if window.get_event(ti.ui.PRESS):
-  #  if window.event.key == ' ': sweepIn(0)
-  #  if window.event.key == ti.ui.RETURN: sweepIn(math.pi / 2)
   pullCloseInput[0] = 1 if window.is_pressed(ti.ui.UP) else 0
   pullCloseInput[1] = 1 if window.is_pressed(ti.ui.LEFT) else 0
   pullCloseInput[2] = 1 if window.is_pressed(ti.ui.SPACE) else 0
-  print(pullCloseInput)
 
   for i in range(10): step()
   #for i in range(50): stepsort(N)
   updateMesh()
 
-  #camera.position(10, 1, 20)
   camera.position(4, 5, 6)
-  #camera.position(0, 1, 6)
   camera.lookat(0, 0, 0)
   scene.set_camera(camera)
 
-  scene.point_light(pos=(0.5, 1, 2), color=(0.5, 0.5, 0.5))
-  scene.ambient_light(color=(0.5, 0.5, 0.5))
-  scene.mesh(boundVerts, indices=boundInds0, color=(0.65, 0.65, 0.5), two_sided=True)
-  #scene.particles(x, radius=R*2, color=(0.6, 0.7, 1))
-  scene.mesh(particleVerts, indices=particleVertInds, color=(0.7, 0.8, 0.7), two_sided=True)
+  floorR, floorG, floorB = 0.7, 0.7, 0.7
+  if pullCloseInput[0] == 1: floorR += 0.1
+  if pullCloseInput[1] == 1: floorG += 0.07
+  if pullCloseInput[2] == 1: floorB += 0.15
+
+  scene.point_light(pos=(0.5, 1, 2), color=(0.4, 0.4, 0.4))
+  scene.ambient_light(color=(0.6, 0.6, 0.6))
+  scene.mesh(boundVerts, indices=boundInds, color=(floorR, floorG, floorB), two_sided=True)
+  scene.mesh(particleVerts, indices=particleVertInds, color=(0.85, 0.7, 0.55), two_sided=True)
   canvas.scene(scene)
   window.show()
   # print(debug)
