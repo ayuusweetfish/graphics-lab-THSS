@@ -21,7 +21,7 @@ Vmax = 3
 Amax = math.pi * 2
 
 # N = number of particles
-N = 8888#8
+N = 888#88
 x0 = ti.Vector.field(3, float)  # Position relative to body origin
 m = ti.field(float)             # Mass
 x = ti.Vector.field(3, float)   # World position
@@ -47,7 +47,7 @@ rsTempProjIdx = ti.field(int)   # Double buffering, see sorting subroutine
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N * 2).place(rsTempProjPos, rsTempProjIdx)
 
-M = 1111#1
+M = 111#11
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
 bodyVel = ti.Vector.field(3, float)
@@ -69,6 +69,12 @@ maxCoord = 1000
 
 # Array of 3 input buttons
 pullCloseInput = ti.field(int, (3,))
+
+# Repulsive, damping, shear, floor collision, floor friction
+particleF = ti.Vector.field(3, float, (N, 5))
+# Particle sum, external
+bodyF = ti.Vector.field(3, float, (M, 2))
+bodyT = ti.Vector.field(3, float, (M,))
 
 # For passing values out during debugging sessions
 debug = ti.field(float, (10,))
@@ -162,11 +168,17 @@ def colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi):
       # Repulsive
       dirUnit = (xi - xj).normalized()
       f += Ks * (dist - dsq ** 0.5) * dirUnit
+      particleF[i, 0] += Ks * (dist - dsq ** 0.5) * dirUnit
+      particleF[j, 0] -= Ks * (dist - dsq ** 0.5) * dirUnit
       # Damping
       relVel = v[j] - vi
       f += Etaelasi * elas[j] * relVel
+      particleF[i, 1] += Etaelasi * elas[j] * relVel
+      particleF[j, 1] -= Etaelasi * elas[j] * relVel
       # Shear
       f += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
+      particleF[i, 2] += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
+      particleF[j, 2] -= Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
       # Accumulate force and torque to respective bodies
       fSum[bodyi] += f
       tSum[bodyi] += (xi - bodyPos[bodyi]).cross(f)
@@ -275,6 +287,9 @@ def step():
   for b in range(M):
     fSum[b] = ti.Vector([0.0, 0.0, 0.0])
     tSum[b] = ti.Vector([0.0, 0.0, 0.0])
+
+  for i in range(N):
+    for j in ti.static(range(6)): particleF[i, j].fill(0)
 
   # Collisions
   # Find axis with PCA
@@ -391,12 +406,15 @@ def step():
       impF = ti.Vector([0.0, 0.0, 0.0])
       impF.y = -boundaryY * bodyMas[b] / dt * EtaB
       impF.y += KsB * (radius[i] - x[i].y)
+      particleF[i, 3] += impF
       # Friction
       paraV = v[i].xz.norm()
       fricF = max(-f.y, 0) * Mu
       if paraV >= 1e-5:
         impF.x -= v[i].x / paraV * fricF
         impF.z -= v[i].z / paraV * fricF
+        particleF[i, 4].x -= v[i].x / paraV * fricF
+        particleF[i, 4].z -= v[i].z / paraV * fricF
       f += impF
       t += (x[i] - bodyPos[b]).cross(impF)
 
@@ -409,6 +427,10 @@ def step():
       pullF += -bodyPos[b] * 1.5
     pullF *= bodyMas[b]
     f += pullF
+
+    bodyF[b, 0] = f - pullF
+    bodyF[b, 1] = pullF
+    bodyT[b] = t
 
     # Integration
     # Translational: Verlet integration
@@ -552,12 +574,43 @@ scene = ti.ui.Scene()
 camera = ti.ui.make_camera()
 
 step()
+
+import os
+frameCount = 0
+recordFile = open(
+  os.path.join(
+    os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__))),
+    'record.bin'
+  ),
+  'wb'
+)
+print(os.path.realpath(recordFile.name))
+
+# Write records
+radiusArr = radius.to_numpy()
+bodyArr = body.to_numpy().astype('float32')
+combined = np.append(np.resize(radiusArr, (N, 1)), np.resize(bodyArr, (N, 1)), 1)
+recordFile.write(combined.tobytes())
+
 while window.running:
+  frameCount += 1
+  if frameCount > 300: break
+
   pullCloseInput[0] = 1 if window.is_pressed(ti.ui.UP) else 0
   pullCloseInput[1] = 1 if window.is_pressed(ti.ui.LEFT) else 0
   pullCloseInput[2] = 1 if window.is_pressed(ti.ui.SPACE) else 0
 
-  for i in range(10): step()
+  for i in range(10):
+    step()
+    # Write file
+    particleFArr = particleF.to_numpy()
+    # print(particleFArr.shape)   # (N, 5, 3)
+    # print(particleFArr.dtype)   # float32
+    xArr = x.to_numpy()
+    # print(xArr.shape)   # (N, 3)
+    combined = np.append(particleFArr, np.resize(xArr, (N, 1, 3)), 1)
+    # print(combined.shape) # (N, 6, 3)
+    recordFile.write(combined.tobytes())
   updateMesh()
 
   camera.position(4, 5, 6)
@@ -577,3 +630,5 @@ while window.running:
   canvas.scene(scene)
   window.show()
   # print(debug)
+
+recordFile.close()
