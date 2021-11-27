@@ -14,14 +14,13 @@ Eta = 60    # Damping force coefficient
 Kt = 1      # Shearing force coefficient
 Mu = 0.2    # Friction coefficient
 KsB = 10000 # Repulsive force coefficient for the floor
-EtaB = 0.3  # Instantaneous impulse coefficient for the floor
 
 # Maximum linear velocity and angular velocity
 Vmax = 3
 Amax = math.pi * 2
 
 # N = number of particles
-N = 888#88
+N = 8888#8
 x0 = ti.Vector.field(3, float)  # Position relative to body origin
 m = ti.field(float)             # Mass
 x = ti.Vector.field(3, float)   # World position
@@ -47,7 +46,7 @@ rsTempProjIdx = ti.field(int)   # Double buffering, see sorting subroutine
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N * 2).place(rsTempProjPos, rsTempProjIdx)
 
-M = 111#11
+M = 1111#1
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
 bodyVel = ti.Vector.field(3, float)
@@ -95,10 +94,9 @@ def init():
     x0[i * 8 + 6] = ti.Vector([4.0, 0.0, 0.0]) * (R * scale)
     x0[i * 8 + 7] = ti.Vector([-4.0, 0.0, 0.0]) * (R * scale)
     bodyPos[i] = ti.Vector([
-      -0.5 + R * 1.8 * (i % 11),
-      R * 6.4 * float(i // 11) + R,
-      #R * 0.4 * (i % 7),
-      R * 3,
+      -0.5 + R * 4.8 * (i % 71 - 35),
+      R * 6.4 * float(i // 71 + 1) + R,
+      R * 7.5 * (i % 7 - 3),
     ])
     bodyIdx[i] = ti.Vector([i * 8, i * 8 + 8])
     rand = ((i * (i % 4 + i * (i // 3) % 17 + 2) + 24) % 97) / 97
@@ -113,8 +111,8 @@ def init():
     cm = ti.Vector([0.0, 0.0, 0.0])
     for j in range(i * 8, i * 8 + 8):
       body[j] = i
-      elas[j] = 1.0 - 0.4 * (i % 8) / 7
-      m[j] = 5 * (scale**3)
+      elas[j] = 0.9 - 0.6 * (i % 8) / 7
+      m[j] = 5 if i % 200 != 0 else 200
       radius[j] = R * scale
       bodyMas[i] += m[j]
       cm += m[j] * x0[j]
@@ -159,7 +157,7 @@ def quat_mat(q):
 # All other arguments for particle `i` are prefetched for performance's sake,
 # as this does not change throughout an inner loop over `j`.
 @ti.func
-def colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi):
+def colliResp(i, j, bodyi, radiusi, xi, vi):
   bodyj = body[j]
   if bodyi != bodyj:
     xj = x[j]
@@ -175,9 +173,9 @@ def colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi):
       particleF[j, 0] -= Ks * (dist - dsq ** 0.5) * dirUnit
       # Damping
       relVel = v[j] - vi
-      f += Etaelasi * elas[j] * relVel
-      particleF[i, 1] += Etaelasi * elas[j] * relVel
-      particleF[j, 1] -= Etaelasi * elas[j] * relVel
+      f += Eta * relVel
+      particleF[i, 1] += Eta * relVel
+      particleF[j, 1] -= Eta * relVel
       # Shear
       f += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
       particleF[i, 2] += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
@@ -386,12 +384,11 @@ def step():
       upLimit = projPos[pi] + R * 2
       lwLimit = projPos[pi] - R * 2
       bodyi, radiusi, xi, vi = body[i], radius[i], x[i], v[i]
-      Etaelasi = Eta * elas[i]
       for pj in range(pi + 1, extraIdx):
         if projPos[pj] > upLimit: break
         j = projIdx[pj]
         if j >= N: j -= N
-        colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi)
+        colliResp(i, j, bodyi, radiusi, xi, vi)
       # Taichi does not allow `range` with step argument
       # for pj in range(pi - 1, -1, -1):
       for dpj in range(1, pi + 1):
@@ -400,7 +397,7 @@ def step():
         j = projIdx[pj]
         if j >= N:
           j -= N
-          colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi)
+          colliResp(i, j, bodyi, radiusi, xi, vi)
 
   for b in range(M):
     f = fSum[b]
@@ -426,7 +423,7 @@ def step():
     if boundaryY != 0:
       i = boundaryYPart
       impF = ti.Vector([0.0, 0.0, 0.0])
-      impF.y = -boundaryY * bodyMas[b] / dt * EtaB
+      impF.y = -min(0, bodyVel[b].y) * bodyMas[b] / dt * elas[i]
       impF.y += KsB * (radius[i] - x[i].y)
       particleF[i, 3] += impF
       # Friction
