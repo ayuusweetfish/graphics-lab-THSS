@@ -9,11 +9,11 @@ dt = 1.0 / 600  # Time step
 R = 0.05  # Maximum particle radius
 G = 1.5   # Gravity
 
-Ks = 10000   # Repulsive force coefficient
-Eta = 600   # Damping force coefficient
+Ks = 30000  # Repulsive force coefficient
+Eta = 1500  # Damping force coefficient
 Kt = 1      # Shearing force coefficient
 Mu = 0.2    # Friction coefficient
-KsB = 10000 # Repulsive force coefficient for the floor
+KsB = 30000 # Repulsive force coefficient for the floor
 
 # Maximum linear velocity and angular velocity
 Vmax = 3
@@ -71,7 +71,7 @@ pullCloseInput = ti.field(int, (3,))
 
 # Repulsive, damping, shear, floor collision, floor friction
 particleF = ti.Vector.field(3, float, (N, 5))
-particleFContact = ti.field(float, (N, 3, 5))
+particleFContact = ti.field(float, (N, 3))
 # Particle sum, external
 bodyF = ti.Vector.field(3, float, (M, 2))
 bodyT = ti.Vector.field(3, float, (M,))
@@ -96,7 +96,7 @@ def init():
     bodyPos[i] = ti.Vector([
       -0.5 + R * 4.8 * (i % 71 - 35),
       R * 6.4 * float(i // 71 + 1) + R,
-      R * 7.5 * (i % 31 - 15),
+      R * 7.5 * (i % 31 - 15 + 0.009 * (i % 97)),
     ])
     bodyIdx[i] = ti.Vector([i * 8, i * 8 + 8])
     rand = ((i * (i % 4 + i * (i // 3) % 17 + 2) + 24) % 97) / 97
@@ -111,7 +111,7 @@ def init():
     cm = ti.Vector([0.0, 0.0, 0.0])
     for j in range(i * 8, i * 8 + 8):
       body[j] = i
-      elas[j] = 0.9 - 0.6 * (i % 8) / 7
+      elas[j] = 0.6 - 0.3 * (i % 8) / 7
       m[j] = 5 if i % 200 != 0 else 200
       radius[j] = R * scale
       bodyMas[i] += m[j]
@@ -167,7 +167,7 @@ def colliResp(i, j, bodyi, radiusi, xi, vi):
     if dsq < dist * dist:
       f = ti.Vector([0.0, 0.0, 0.0])
       # Repulsive
-      dirUnit = (xi - xj).normalized()
+      dirUnit = r.normalized()
       f += Ks * (dist - dsq ** 0.5) * dirUnit
       particleF[i, 0] += Ks * (dist - dsq ** 0.5) * dirUnit
       particleF[j, 0] -= Ks * (dist - dsq ** 0.5) * dirUnit
@@ -186,20 +186,12 @@ def colliResp(i, j, bodyi, radiusi, xi, vi):
       fSum[bodyj] -= f
       tSum[bodyj] -= (xj - bodyPos[bodyj]).cross(f)
       for k in range(3):
-        if particleFContact[i, k, 0] == -1:
-          particleFContact[i, k, 0] = j
-          particleFContact[i, k, 1] = dsq ** 0.5
-          particleFContact[i, k, 2] = xj.x
-          particleFContact[i, k, 3] = xj.y
-          particleFContact[i, k, 4] = xj.z
+        if particleFContact[i, k] == -1:
+          particleFContact[i, k] = j
           break
       for k in range(3):
-        if particleFContact[j, k, 0] == -1:
-          particleFContact[j, k, 0] = i
-          particleFContact[j, k, 1] = dsq ** 0.5
-          particleFContact[j, k, 2] = xi.x
-          particleFContact[j, k, 3] = xi.y
-          particleFContact[j, k, 4] = xi.z
+        if particleFContact[j, k] == -1:
+          particleFContact[j, k] = i
           break
 
 # A pass of radix sort
@@ -307,9 +299,7 @@ def step():
 
   for i in range(N):
     for j in ti.static(range(6)): particleF[i, j].fill(0)
-    for j in ti.static(range(3)):
-      particleFContact[i, j, 0] = -1
-      particleFContact[i, j, 1] = 0
+    for j in ti.static(range(3)): particleFContact[i, j] = -1
 
   # Collisions
   # Find axis with PCA
@@ -410,6 +400,7 @@ def step():
       t += (x[i] - bodyPos[b]).cross(grav)
 
     # Impulse from the floor
+    # TODO: Do not use representative
     # Find the representative contacting particle
     # which is determined by maximum velocity along the vertical axis
     boundaryY = 0.0
@@ -637,8 +628,8 @@ while window.running:
       # print(combined.shape) # (N, 18)
       particleFContactArr = particleFContact.to_numpy()
       combined = np.append(combined,
-        np.resize(particleFContactArr, (N, 15)), 1)
-      # print(combined.shape) # (N, 24)
+        np.resize(particleFContactArr, (N, 3)), 1)
+      # print(combined.shape) # (N, 21)
       recordFile.write(combined.tobytes())
   updateMesh()
 

@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define N 888
+#define N 8888
 
 typedef struct particle_header {
   float radius;
@@ -18,7 +18,7 @@ typedef struct particle_header {
 typedef struct particle {
   float force[5][3];
   float pos[3];
-  float contact[3][5];
+  float contact[3];
 } particle;
 
 void MyDrawSphereWires(Vector3 centerPos, float radius, int rings, int slices, Color color);
@@ -220,18 +220,14 @@ int main(int argc, char *argv[])
         });
       }
       #undef sqr
-      if (ps[framebase + bestparticle].contact[0][0] != -1) {
+      if (ps[framebase + bestparticle].contact[0] != -1) {
         char *ss = s;
         char *end = s + sizeof s;
         for (int j = 0; j < 3; j++)
-          if (ps[framebase + bestparticle].contact[j][0] != -1) {
-            ss += snprintf(ss, end - ss, "%s%d (d=%.3f, other at (%.3f,%.3f,%.3f))",
+          if (ps[framebase + bestparticle].contact[j] != -1) {
+            ss += snprintf(ss, end - ss, "%s%d",
               j == 0 ? "contact: " : ", ",
-              (int)ps[framebase + bestparticle].contact[j][0],
-              ps[framebase + bestparticle].contact[j][1],
-              ps[framebase + bestparticle].contact[j][2],
-              ps[framebase + bestparticle].contact[j][3],
-              ps[framebase + bestparticle].contact[j][4]
+              (int)ps[framebase + bestparticle].contact[j]
             );
           }
         DrawText(s, 10, 330, 16, (Color){64, 64, 64, 255});
