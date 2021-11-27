@@ -72,6 +72,7 @@ pullCloseInput = ti.field(int, (3,))
 
 # Repulsive, damping, shear, floor collision, floor friction
 particleF = ti.Vector.field(3, float, (N, 5))
+particleFContact = ti.field(float, (N, 3, 5))
 # Particle sum, external
 bodyF = ti.Vector.field(3, float, (M, 2))
 bodyT = ti.Vector.field(3, float, (M,))
@@ -96,10 +97,12 @@ def init():
     bodyPos[i] = ti.Vector([
       -0.5 + R * 1.8 * (i % 11),
       R * 6.4 * float(i // 11) + R,
-      R * 0.4 * (i % 7),
+      #R * 0.4 * (i % 7),
+      R * 3,
     ])
     bodyIdx[i] = ti.Vector([i * 8, i * 8 + 8])
-    bodyVel[i] = ti.Vector([-0.2, ti.random() * 0.5, 0])
+    rand = ((i * (i % 4 + i * (i // 3) % 17 + 2) + 24) % 97) / 97
+    bodyVel[i] = ti.Vector([-0.2, rand * 0.5, 0])
     bodyAcc[i] = ti.Vector([0, 0, 0])
     bodyAng[i] = ti.Vector([0, 0, 0])
     bodyOri[i] = ti.Vector([0, 0, 0, 1])
@@ -161,7 +164,7 @@ def colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi):
   if bodyi != bodyj:
     xj = x[j]
     r = xi - xj
-    dsq = r.x * r.x + r.y * r.y
+    dsq = r.x * r.x + r.y * r.y + r.z * r.z
     dist = radiusi + radius[j]
     if dsq < dist * dist:
       f = ti.Vector([0.0, 0.0, 0.0])
@@ -184,6 +187,22 @@ def colliResp(i, j, bodyi, radiusi, xi, vi, Etaelasi):
       tSum[bodyi] += (xi - bodyPos[bodyi]).cross(f)
       fSum[bodyj] -= f
       tSum[bodyj] -= (xj - bodyPos[bodyj]).cross(f)
+      for k in range(3):
+        if particleFContact[i, k, 0] == -1:
+          particleFContact[i, k, 0] = j
+          particleFContact[i, k, 1] = dsq ** 0.5
+          particleFContact[i, k, 2] = xj.x
+          particleFContact[i, k, 3] = xj.y
+          particleFContact[i, k, 4] = xj.z
+          break
+      for k in range(3):
+        if particleFContact[j, k, 0] == -1:
+          particleFContact[j, k, 0] = i
+          particleFContact[j, k, 1] = dsq ** 0.5
+          particleFContact[j, k, 2] = xi.x
+          particleFContact[j, k, 3] = xi.y
+          particleFContact[j, k, 4] = xi.z
+          break
 
 # A pass of radix sort
 # `N`: number of elements
@@ -290,6 +309,9 @@ def step():
 
   for i in range(N):
     for j in ti.static(range(6)): particleF[i, j].fill(0)
+    for j in ti.static(range(3)):
+      particleFContact[i, j, 0] = -1
+      particleFContact[i, j, 1] = 0
 
   # Collisions
   # Find axis with PCA
@@ -575,26 +597,28 @@ camera = ti.ui.make_camera()
 
 step()
 
+record = False
+
 import os
 frameCount = 0
-recordFile = open(
-  os.path.join(
-    os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__))),
-    'record.bin'
-  ),
-  'wb'
-)
-print(os.path.realpath(recordFile.name))
-
-# Write records
-radiusArr = radius.to_numpy()
-bodyArr = body.to_numpy().astype('float32')
-combined = np.append(np.resize(radiusArr, (N, 1)), np.resize(bodyArr, (N, 1)), 1)
-recordFile.write(combined.tobytes())
+if record:
+  recordFile = open(
+    os.path.join(
+      os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__))),
+      'record.bin'
+    ),
+    'wb'
+  )
+  print(os.path.realpath(recordFile.name))
+  # Write records
+  radiusArr = radius.to_numpy()
+  bodyArr = body.to_numpy().astype('float32')
+  combined = np.append(np.resize(radiusArr, (N, 1)), np.resize(bodyArr, (N, 1)), 1)
+  recordFile.write(combined.tobytes())
 
 while window.running:
   frameCount += 1
-  if frameCount > 300: break
+  if record and frameCount > 400: break
 
   pullCloseInput[0] = 1 if window.is_pressed(ti.ui.UP) else 0
   pullCloseInput[1] = 1 if window.is_pressed(ti.ui.LEFT) else 0
@@ -602,15 +626,23 @@ while window.running:
 
   for i in range(10):
     step()
-    # Write file
-    particleFArr = particleF.to_numpy()
-    # print(particleFArr.shape)   # (N, 5, 3)
-    # print(particleFArr.dtype)   # float32
-    xArr = x.to_numpy()
-    # print(xArr.shape)   # (N, 3)
-    combined = np.append(particleFArr, np.resize(xArr, (N, 1, 3)), 1)
-    # print(combined.shape) # (N, 6, 3)
-    recordFile.write(combined.tobytes())
+    if record:
+      # Write file
+      particleFArr = particleF.to_numpy()
+      # print(particleFArr.shape)   # (N, 5, 3)
+      # print(particleFArr.dtype)   # float32
+      xArr = x.to_numpy()
+      # print(xArr.shape)   # (N, 3)
+      combined = np.append(
+        np.resize(particleFArr, (N, 15)),
+        np.resize(xArr, (N, 3)),
+        1)
+      # print(combined.shape) # (N, 18)
+      particleFContactArr = particleFContact.to_numpy()
+      combined = np.append(combined,
+        np.resize(particleFContactArr, (N, 15)), 1)
+      # print(combined.shape) # (N, 24)
+      recordFile.write(combined.tobytes())
   updateMesh()
 
   camera.position(4, 5, 6)
@@ -631,4 +663,4 @@ while window.running:
   window.show()
   # print(debug)
 
-recordFile.close()
+if record: recordFile.close()

@@ -6,6 +6,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define N 888
 
@@ -17,16 +18,20 @@ typedef struct particle_header {
 typedef struct particle {
   float force[5][3];
   float pos[3];
+  float contact[3][5];
 } particle;
 
 void MyDrawSphereWires(Vector3 centerPos, float radius, int rings, int slices, Color color);
 
-int main()
+int main(int argc, char *argv[])
 {
   int framesize = sizeof(particle) * N;
   int headersize = sizeof(particle_header) * N;
 
-  FILE *f = fopen("record.bin", "rb");
+  const char *path = "record.bin";
+  if (argc > 1) path = argv[1];
+
+  FILE *f = fopen(path, "rb");
   fseek(f, 0, SEEK_END);
   int nframes = (ftell(f) - headersize) / framesize;
   fseek(f, 0, SEEK_SET);
@@ -46,7 +51,10 @@ int main()
     bodycolour[i] = (Color){r + base, g + base, b + base, 255};
   }
 
-  InitWindow(1280, 720, "Playback");
+  int titlemaxlen = 16 + strlen(path);
+  char *title = (char *)malloc(titlemaxlen);
+  snprintf(title, titlemaxlen, "Playback [%s]", path);
+  InitWindow(1280, 720, title);
   SetTargetFPS(60);
 
   Camera3D camera = (Camera3D){
@@ -138,7 +146,7 @@ int main()
       MyDrawSphereWires(
         position,
         phs[i].radius,
-        8, 8,
+        7, 7,
         bodycolour[(int)phs[i].body]
       );
       for (int j = 0; j < 5; j++) if (forcemask & (1 << j)) {
@@ -148,7 +156,7 @@ int main()
           ps[framebase + i].force[j][2],
         };
         DrawLine3D(position,
-          Vector3Add(position, Vector3Scale(force, 5e-4)),
+          Vector3Add(position, Vector3Scale(force, 5e-3)),
           (Color){
             bodycolour[(int)phs[i].body].r * 2 / 3,
             bodycolour[(int)phs[i].body].g * 2 / 3,
@@ -160,12 +168,76 @@ int main()
     }
     EndMode3D();
 
+    char s[256];
+    snprintf(s, sizeof s, "step %04d", frame);
+    DrawText(s, 10, 10, 24, BLACK);
+
     static const char *forcenames[5] = {
       "repulsive", "damping", "shear", "floor collision", "floor friction"
     };
     for (int j = 0, k = 0; j < 5; j++) if (forcemask & (1 << j)) {
-      DrawText(forcenames[j], 10, 10 + (k++) * 20, 16, BLACK);
+      DrawText(forcenames[j], 10, 40 + (k++) * 20, 16, BLACK);
     }
+
+    Ray ray = GetMouseRay(GetMousePosition(), camera);
+    float bestdistance = 1e24;
+    int bestparticle = -1;
+    for (int i = 0; i < N; i++) {
+      Vector3 position = (Vector3){
+        ps[framebase + i].pos[0],
+        ps[framebase + i].pos[1],
+        ps[framebase + i].pos[2],
+      };
+      RayCollision colli = GetRayCollisionSphere(ray, position, phs[i].radius);
+      if (colli.hit && colli.distance < bestdistance) {
+        bestdistance = colli.distance;
+        bestparticle = i;
+      }
+    }
+    if (bestparticle != -1) {
+      snprintf(s, sizeof s, "body %d particle %d\nr = %.4f\n(%.4f, %.4f, %.4f)",
+        (int)phs[bestparticle].body,
+        bestparticle,
+        phs[bestparticle].radius,
+        ps[framebase + bestparticle].pos[0],
+        ps[framebase + bestparticle].pos[1],
+        ps[framebase + bestparticle].pos[2]
+      );
+      DrawText(s, 10, 150, 16, bodycolour[(int)phs[bestparticle].body]);
+      #define sqr(_x) ((_x) * (_x))
+      for (int j = 0; j < 5; j++) {
+        snprintf(s, sizeof s, "%-16s: %.5f", forcenames[j],
+          sqrtf(
+            sqr(ps[framebase + bestparticle].force[j][0]) +
+            sqr(ps[framebase + bestparticle].force[j][1]) +
+            sqr(ps[framebase + bestparticle].force[j][2])
+          ));
+        DrawText(s, 10, 230 + j * 20, 16, (Color){
+          bodycolour[(int)phs[bestparticle].body].r * 2 / 3,
+          bodycolour[(int)phs[bestparticle].body].g * 2 / 3,
+          bodycolour[(int)phs[bestparticle].body].b * 2 / 3,
+          255
+        });
+      }
+      #undef sqr
+      if (ps[framebase + bestparticle].contact[0][0] != -1) {
+        char *ss = s;
+        char *end = s + sizeof s;
+        for (int j = 0; j < 3; j++)
+          if (ps[framebase + bestparticle].contact[j][0] != -1) {
+            ss += snprintf(ss, end - ss, "%s%d (d=%.3f, other at (%.3f,%.3f,%.3f))",
+              j == 0 ? "contact: " : ", ",
+              (int)ps[framebase + bestparticle].contact[j][0],
+              ps[framebase + bestparticle].contact[j][1],
+              ps[framebase + bestparticle].contact[j][2],
+              ps[framebase + bestparticle].contact[j][3],
+              ps[framebase + bestparticle].contact[j][4]
+            );
+          }
+        DrawText(s, 10, 330, 16, (Color){64, 64, 64, 255});
+      }
+    }
+
     EndDrawing();
   }
 
