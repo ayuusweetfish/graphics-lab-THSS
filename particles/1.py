@@ -9,8 +9,8 @@ dt = 1.0 / 600  # Time step
 R = 0.05  # Maximum particle radius
 G = 1.5   # Gravity
 
-Ks = 3000   # Repulsive force coefficient
-Eta = 60    # Damping force coefficient
+Ks = 10000   # Repulsive force coefficient
+Eta = 600   # Damping force coefficient
 Kt = 1      # Shearing force coefficient
 Mu = 0.2    # Friction coefficient
 KsB = 10000 # Repulsive force coefficient for the floor
@@ -96,7 +96,7 @@ def init():
     bodyPos[i] = ti.Vector([
       -0.5 + R * 4.8 * (i % 71 - 35),
       R * 6.4 * float(i // 71 + 1) + R,
-      R * 7.5 * (i % 7 - 3),
+      R * 7.5 * (i % 31 - 15),
     ])
     bodyIdx[i] = ti.Vector([i * 8, i * 8 + 8])
     rand = ((i * (i % 4 + i * (i // 3) % 17 + 2) + 24) % 97) / 97
