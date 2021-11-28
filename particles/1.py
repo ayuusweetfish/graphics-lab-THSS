@@ -119,6 +119,7 @@ def init():
       cm += m[j] * x0[j]
     cm /= 8
     for j in range(i * 8, i * 8 + 8): x0[j] -= cm
+    # Inertia tensor
     for j in range(i * 8, i * 8 + 8):
       for p, q in ti.static(ti.ndrange(3, 3)):
         ine[p, q] -= m[j] * x0[j][p] * x0[j][q]
@@ -186,13 +187,12 @@ def colliResp(i, j, bodyi, radiusi, xi, vi):
       tSum[bodyi] += (xi - bodyPos[bodyi]).cross(f)
       fSum[bodyj] -= f
       tSum[bodyj] -= (xj - bodyPos[bodyj]).cross(f)
+      # Record contacting particles
       for k in range(3):
-        if ti.atomic_add(particleFContact[i, k], float(j + 1)) == -1:
-          break
+        if ti.atomic_add(particleFContact[i, k], float(j + 1)) == -1: break
         ti.atomic_add(particleFContact[i, k], -float(j + 1))
       for k in range(3):
-        if ti.atomic_add(particleFContact[j, k], float(i + 1)) == -1:
-          break
+        if ti.atomic_add(particleFContact[j, k], float(i + 1)) == -1: break
         ti.atomic_add(particleFContact[j, k], -float(i + 1))
 
 # A pass of radix sort
@@ -249,6 +249,7 @@ def sortPass(N, sortRound, pos1, idx1, pos2, idx2):
       pos2[pos] = pos1[i]
       rsCount[t, bucket] += 1
 
+# Sort `projPos`, simultaneously permuting the tag `projIdx`
 @ti.func
 def sortProj(N):
   # f32 values are processed prior to sorting
@@ -357,11 +358,13 @@ def step():
     maxQ = ti.ceil((Q + ri) / gridSize)
     for curP in range(minP, maxP):
       for curQ in range(minQ, maxQ):
+        # For the first copy, save at index `i`
+        # For subsequent copies, save at `extraIdx` and mark as non-starting
         # XXX: The following appears to be incorrectly interpreted. Report upstream?
         # idx = i if curP == minP and curQ == minQ else ti.atomic_add(extraIdx, 1)
         idx = i
         if curP > minP or curQ > minQ: idx = ti.atomic_add(extraIdx, 1)
-        flag = 0 if curP == minP and curQ == minQ else N
+        flag = 0 if curP == minP and curQ == minQ else N  # Non-starting flag
         gridId = cantorOmni(curP, curQ)
         projPos[idx] = Z + maxCoord * gridId
         projIdx[idx] = i + flag
@@ -371,15 +374,18 @@ def step():
   # Responses
   for pi in range(extraIdx):
     i = projIdx[pi]
+    # Skip non-starting objects (>= `N`)
     if i < N:
       upLimit = projPos[pi] + R * 2
       lwLimit = projPos[pi] - R * 2
       bodyi, radiusi, xi, vi = body[i], radius[i], x[i], v[i]
+      # Forward scan
       for pj in range(pi + 1, extraIdx):
         if projPos[pj] > upLimit: break
         j = projIdx[pj]
         if j >= N: j -= N
         colliResp(i, j, bodyi, radiusi, xi, vi)
+      # Backward scan, only handling non-starting objects
       # Taichi does not allow `range` with step argument
       # for pj in range(pi - 1, -1, -1):
       for dpj in range(1, pi + 1):
@@ -400,7 +406,7 @@ def step():
       f += grav
       t += (x[i] - bodyPos[b]).cross(grav)
 
-    # Impulse from the floor
+    # Forces from the floor
     # Weight is distributed among those intersecting the floor
     # by distance of penetration
     penSum = 0.0
@@ -412,15 +418,17 @@ def step():
       for i in range(bodyIdx[b][0], bodyIdx[b][1]):
         pen = radius[i] - x[i].y
         if pen <= 0: continue
+        # Weights of all affected particles sum to 1
         weight = pen / penSum
+        # Repulsive force
         impF = ti.Vector([0.0, 0.0, 0.0])
-        impF.y += KsB * pen
-        impF.y -= v[i].y * EtaB * elas[i]
+        impF.y += KsB * pen               # Hooke's law
+        impF.y -= v[i].y * EtaB * elas[i] # Damping
         particleF[i, 3] += impF
         # Friction
         paraV = v[i].xz.norm()
-        fricF = max(-f.y, 0) * Mu * weight
         if paraV >= 1e-5:
+          fricF = max(-f.y, 0) * Mu * weight
           impF.x -= v[i].x / paraV * fricF
           impF.z -= v[i].z / paraV * fricF
           particleF[i, 4].x -= v[i].x / paraV * fricF
@@ -450,7 +458,7 @@ def step():
     if Vnorm > Vmax: bodyVel[b] *= Vmax / Vnorm
     bodyAcc[b] = newAcc
     bodyPos[b] += bodyVel[b] * dt + bodyAcc[b] * (0.5*dt*dt)
-    # Rotational
+    # Rotational: forward Euler
     bodyAng[b] += t * dt
     rotMat = quat_mat(bodyOri[b])
     angVel = (rotMat @ bodyIne[b] @ rotMat.transpose()) @ bodyAng[b]
@@ -532,6 +540,7 @@ def buildMesh():
         pdcbInitPos[base + (p+1)*HemisPlSd + q] = (
           centre + radial * cosPhi + up * sinPhi
         ) * (h*2 - 1)
+  # Mesh in local coordinates
   vertCount = 0
   indCount = 0
   for i in range(M):
@@ -578,6 +587,7 @@ def updateMesh():
 init()
 buildMesh()
 
+# Display
 window = ti.ui.Window('Collision', (1280, 720), vsync=True)
 canvas = window.get_canvas()
 scene = ti.ui.Scene()
@@ -585,7 +595,9 @@ camera = ti.ui.make_camera()
 
 step()
 
-record = False
+# For recording
+record = True
+# Flattens a Taichi field into a NumPy array of (N, ?)
 def npFlatten(field):
   arr = field.to_numpy()
   shape = arr.shape
@@ -603,15 +615,14 @@ if record:
     ),
     'wb'
   )
-  print(os.path.realpath(recordFile.name))
-  # Write records
-  combined = np.concatenate((
+  print('recording to ' + os.path.realpath(recordFile.name))
+  # Write recording header
+  recordFile.write(np.concatenate((
     npFlatten(radius),
     npFlatten(m),
     npFlatten(elas),
     npFlatten(body)
-  ), axis=1, dtype='float32')
-  recordFile.write(combined.tobytes())
+  ), axis=1, dtype='float32').tobytes())
 
 while window.running:
   frameCount += 1
@@ -624,14 +635,13 @@ while window.running:
   for i in range(10):
     step()
     if record:
-      # Write file
-      combined = np.concatenate((
+      # Dump relevant data of the current step
+      recordFile.write(np.concatenate((
         npFlatten(particleF),
         npFlatten(x),
         npFlatten(v),
         npFlatten(particleFContact),
-      ), axis=1, dtype='float32')
-      recordFile.write(combined.tobytes())
+      ), axis=1, dtype='float32').tobytes())
   updateMesh()
 
   camera.position(4, 5, 6)
