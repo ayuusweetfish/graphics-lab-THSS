@@ -615,7 +615,7 @@ if record:
 
 while window.running:
   frameCount += 1
-  if record and frameCount > 400: break
+  if record and frameCount > 200: break
 
   pullCloseInput[0] = 1 if window.is_pressed(ti.ui.UP) else 0
   pullCloseInput[1] = 1 if window.is_pressed(ti.ui.LEFT) else 0

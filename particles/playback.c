@@ -1,7 +1,6 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "rlgl.h"
-#include "playback_utils.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -24,15 +23,16 @@ typedef struct particle {
   float contact[3];
 } particle;
 
-void MyDrawSphereWires(Vector3 centerPos, float radius, int rings, int slices, Color color);
+static void MyDrawSphereWires(Vector3 centerPos, float radius, int rings, int slices, Color color);
+static void MyDrawCircleFilled3D(Vector3 center, float radius, Color color);
 
 Font font;
 Font fontlarge;
-void MyDrawText(const char *text, int posX, int posY, int fontSize, Color color)
+static void MyDrawText(const char *text, int posX, int posY, int fontSize, Color color)
 {
   DrawTextEx(font, text, (Vector2){posX, posY}, fontSize, 0, color);
 }
-void MyDrawTextLarge(const char *text, int posX, int posY, int fontSize, Color color)
+static void MyDrawTextLarge(const char *text, int posX, int posY, int fontSize, Color color)
 {
   DrawTextEx(fontlarge, text, (Vector2){posX, posY}, fontSize, 0, color);
 }
@@ -60,10 +60,11 @@ int main(int argc, char *argv[])
   fread(ps, nframes * sizeof(particle) * N, 1, f);
 
   Color *bodycolour = (Color *)malloc(sizeof(Color) * N);
+  int randseed = 20211128;
   for (int i = 0; i < N; i++) {
-    int r = rand() % 64;
-    int g = rand() % 64;
-    int b = rand() % 64;
+    int r = ((randseed = ((randseed * 1103515245 + 12345) & 0x7fffffff)) >> 15) % 64;
+    int g = ((randseed = ((randseed * 1103515245 + 12345) & 0x7fffffff)) >> 16) % 64;
+    int b = ((randseed = ((randseed * 1103515245 + 12345) & 0x7fffffff)) >> 17) % 64;
     int base = 160 + (64 - (r * 2 + g * 5 + b) / 8) / 2;
     bodycolour[i] = (Color){r + base, g + base, b + base, 255};
   }
@@ -198,6 +199,16 @@ int main(int argc, char *argv[])
         MyDrawSphereWires(position, phs[i].radius, 7, 7, tint);
       else
         DrawSphereEx(position, phs[i].radius, 7, 7, tint);
+      // Shadow
+      if (position.y <= phs[i].radius * 4) {
+        float radius = Clamp((phs[i].radius * 4 - position.y) / 3, 0, phs[i].radius);
+        int alpha = Clamp(Remap(position.y, phs[i].radius * 4, phs[i].radius * 2, 0, 255), 0, 255);
+        MyDrawCircleFilled3D(
+          (Vector3){position.x, -1e-4, position.z},
+          radius,
+          (Color){236, 236, 236, alpha}
+        );
+      }
       for (int j = 0; j < 5; j++) if (forcemask & (1 << j)) {
         Vector3 force = (Vector3){
           ps[framebase + i].force[j][0],
@@ -215,6 +226,20 @@ int main(int argc, char *argv[])
         );
       }
     }
+    // Floor
+    const int gridsize = 20;
+    const float cellsize = 0.5;
+    for (int x = -gridsize; x <= gridsize; x++)
+      for (int z = -gridsize; z <= gridsize; z++) {
+        DrawLine3D(
+          (Vector3){x * cellsize, 0, -gridsize * cellsize},
+          (Vector3){x * cellsize, 0, +gridsize * cellsize},
+          (Color){192, 192, 192, 64});
+        DrawLine3D(
+          (Vector3){-gridsize * cellsize, 0, z * cellsize},
+          (Vector3){+gridsize * cellsize, 0, z * cellsize},
+          (Color){192, 192, 192, 64});
+      }
     EndMode3D();
 
     char s[256];
@@ -260,6 +285,7 @@ int main(int argc, char *argv[])
         ps[framebase + bestparticle].pos[0],
         ps[framebase + bestparticle].pos[1],
         ps[framebase + bestparticle].pos[2]);
+      MyDrawText(s, 10, (ybase += yskip), 16, tint);
       snprintf(s, sizeof s, "vel     (%.4f, %.4f, %.4f)",
         ps[framebase + bestparticle].vel[0],
         ps[framebase + bestparticle].vel[1],
@@ -303,4 +329,72 @@ int main(int argc, char *argv[])
   CloseWindow();
 
   return 0;
+}
+
+// Drawing subroutines
+// Copied from rmodels.c, raysan5/raylib@ed125f27b01053dfd814a0d847ce7534c0a3ea8d
+// Draw sphere wires
+void MyDrawSphereWires(Vector3 centerPos, float radius, int rings, int slices, Color color)
+{
+    int numVertex = (rings + 2)*slices*6;
+    // XXX: rlBegin pads vertices to alignment, may break prior checks?
+    rlCheckRenderBatchLimit(numVertex * 2);
+
+#define rlVertex3f(_x, _y, _z) rlVertex3f( \
+  (_x) * radius + centerPos.x, \
+  (_y) * radius + centerPos.y, \
+  (_z) * radius + centerPos.z  \
+)
+    rlBegin(RL_LINES);
+        rlColor4ub(color.r, color.g, color.b, color.a);
+
+        for (int i = 0; i < (rings + 2); i++)
+        {
+            for (int j = 0; j < slices; j++)
+            {
+                rlVertex3f(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*i))*sinf(DEG2RAD*(360.0f*j/slices)),
+                           sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*i)),
+                           cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*i))*cosf(DEG2RAD*(360.0f*j/slices)));
+                rlVertex3f(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*sinf(DEG2RAD*(360.0f*(j + 1)/slices)),
+                           sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1))),
+                           cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*cosf(DEG2RAD*(360.0f*(j + 1)/slices)));
+
+                rlVertex3f(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*sinf(DEG2RAD*(360.0f*(j + 1)/slices)),
+                           sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1))),
+                           cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*cosf(DEG2RAD*(360.0f*(j + 1)/slices)));
+                rlVertex3f(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*sinf(DEG2RAD*(360.0f*j/slices)),
+                           sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1))),
+                           cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*cosf(DEG2RAD*(360.0f*j/slices)));
+
+                rlVertex3f(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*sinf(DEG2RAD*(360.0f*j/slices)),
+                           sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1))),
+                           cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*cosf(DEG2RAD*(360.0f*j/slices)));
+                rlVertex3f(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*i))*sinf(DEG2RAD*(360.0f*j/slices)),
+                           sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*i)),
+                           cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*i))*cosf(DEG2RAD*(360.0f*j/slices)));
+            }
+        }
+    rlEnd();
+#undef rlVertex3f
+}
+
+void MyDrawCircleFilled3D(Vector3 center, float radius, Color color)
+{
+    rlCheckRenderBatchLimit(3*12);
+
+#define rlVertex3f(_x, _y, _z) rlVertex3f( \
+  (_x) + center.x, \
+  (_y) + center.y, \
+  (_z) + center.z  \
+)
+    rlBegin(RL_TRIANGLES);
+        for (int i = 0; i < 360; i += 30)
+        {
+            rlColor4ub(color.r, color.g, color.b, color.a);
+            rlVertex3f(0.0f, 0.0f, 0.0f);
+            rlVertex3f(sinf(DEG2RAD*i)*radius, 0.0f, cosf(DEG2RAD*i)*radius);
+            rlVertex3f(sinf(DEG2RAD*(i + 30))*radius, 0.0f, cosf(DEG2RAD*(i + 30))*radius);
+        }
+    rlEnd();
+#undef rlVertex3f
 }
