@@ -585,7 +585,13 @@ camera = ti.ui.make_camera()
 
 step()
 
-record = False
+record = True
+def npFlatten(field):
+  arr = field.to_numpy()
+  shape = arr.shape
+  count = 1
+  for i in range(1, len(shape)): count *= shape[i]
+  return np.resize(arr, (shape[0], count))
 
 import os
 frameCount = 0
@@ -599,14 +605,17 @@ if record:
   )
   print(os.path.realpath(recordFile.name))
   # Write records
-  radiusArr = radius.to_numpy()
-  bodyArr = body.to_numpy().astype('float32')
-  combined = np.append(np.resize(radiusArr, (N, 1)), np.resize(bodyArr, (N, 1)), 1)
+  combined = np.concatenate((
+    npFlatten(radius),
+    npFlatten(m),
+    npFlatten(elas),
+    npFlatten(body)
+  ), axis=1, dtype='float32')
   recordFile.write(combined.tobytes())
 
 while window.running:
   frameCount += 1
-  if record and frameCount > 400: break
+  if record and frameCount > 200: break
 
   pullCloseInput[0] = 1 if window.is_pressed(ti.ui.UP) else 0
   pullCloseInput[1] = 1 if window.is_pressed(ti.ui.LEFT) else 0
@@ -616,20 +625,11 @@ while window.running:
     step()
     if record:
       # Write file
-      particleFArr = particleF.to_numpy()
-      # print(particleFArr.shape)   # (N, 5, 3)
-      # print(particleFArr.dtype)   # float32
-      xArr = x.to_numpy()
-      # print(xArr.shape)   # (N, 3)
-      combined = np.append(
-        np.resize(particleFArr, (N, 15)),
-        np.resize(xArr, (N, 3)),
-        1)
-      # print(combined.shape) # (N, 18)
-      particleFContactArr = particleFContact.to_numpy()
-      combined = np.append(combined,
-        np.resize(particleFContactArr, (N, 3)), 1)
-      # print(combined.shape) # (N, 21)
+      combined = np.concatenate((
+        npFlatten(particleF),
+        npFlatten(x),
+        npFlatten(particleFContact),
+      ), axis=1, dtype='float32')
       recordFile.write(combined.tobytes())
   updateMesh()
 

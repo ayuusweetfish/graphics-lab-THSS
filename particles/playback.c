@@ -12,6 +12,8 @@
 
 typedef struct particle_header {
   float radius;
+  float mass;
+  float elas;
   float body;
 } particle_header;
 
@@ -22,6 +24,12 @@ typedef struct particle {
 } particle;
 
 void MyDrawSphereWires(Vector3 centerPos, float radius, int rings, int slices, Color color);
+
+Font font;
+void MyDrawText(const char *text, int posX, int posY, int fontSize, Color color)
+{
+  DrawTextEx(font, text, (Vector2){posX, posY}, fontSize, 0, color);
+}
 
 int main(int argc, char *argv[])
 {
@@ -56,6 +64,10 @@ int main(int argc, char *argv[])
   snprintf(title, titlemaxlen, "Playback [%s]", path);
   InitWindow(1280, 720, title);
   SetTargetFPS(60);
+
+  font = LoadFont(
+    "Brass_Mono_regular.otf"
+  );
 
   Camera3D camera = (Camera3D){
     (Vector3){4, 5, 6},
@@ -158,9 +170,9 @@ int main(int argc, char *argv[])
         DrawLine3D(position,
           Vector3Add(position, Vector3Scale(force, 5e-3)),
           (Color){
-            bodycolour[(int)phs[i].body].r * 2 / 3,
-            bodycolour[(int)phs[i].body].g * 2 / 3,
-            bodycolour[(int)phs[i].body].b * 2 / 3,
+            (int)bodycolour[(int)phs[i].body].r * 2 / 3,
+            (int)bodycolour[(int)phs[i].body].g * 2 / 3,
+            (int)bodycolour[(int)phs[i].body].b * 2 / 3,
             255
           }
         );
@@ -170,13 +182,21 @@ int main(int argc, char *argv[])
 
     char s[256];
     snprintf(s, sizeof s, "step %04d", frame);
-    DrawText(s, 10, 10, 24, BLACK);
+    MyDrawText(s, 10, 10, 24, BLACK);
 
     static const char *forcenames[5] = {
-      "repulsive", "damping", "shear", "floor collision", "floor friction"
+      "repulsive", "damping", "shear", "groundup", "friction"
     };
-    for (int j = 0, k = 0; j < 5; j++) if (forcemask & (1 << j)) {
-      DrawText(forcenames[j], 10, 40 + (k++) * 20, 16, BLACK);
+    if (forcemask != 0) {
+      char *ss = s;
+      char *end = s + sizeof s;
+      *ss = '\0';
+      for (int j = 0, first = 1; j < 5; j++) if (forcemask & (1 << j)) {
+        ss += strlcat(ss, (first ? "forces: " : ", "), end - ss);
+        ss += strlcat(ss, forcenames[j], end - ss);
+        first = 0;
+      }
+      MyDrawText(s, 10, 40, 16, BLACK);
     }
 
     Ray ray = GetMouseRay(GetMousePosition(), camera);
@@ -194,32 +214,47 @@ int main(int argc, char *argv[])
         bestparticle = i;
       }
     }
+    int ybase = 50;
+    int yskip = 20;
     if (bestparticle != -1) {
-      snprintf(s, sizeof s, "body %d particle %d\nr = %.4f\n(%.4f, %.4f, %.4f)",
-        (int)phs[bestparticle].body,
-        bestparticle,
-        phs[bestparticle].radius,
+      Color tint = (Color){
+        (int)bodycolour[(int)phs[bestparticle].body].r * 3 / 4,
+        (int)bodycolour[(int)phs[bestparticle].body].g * 3 / 4,
+        (int)bodycolour[(int)phs[bestparticle].body].b * 3 / 4,
+        255
+      };
+      snprintf(s, sizeof s, "body %d particle %d",
+        (int)phs[bestparticle].body, bestparticle);
+      MyDrawText(s, 10, (ybase += yskip), 16, tint);
+      snprintf(s, sizeof s, "(%.4f, %.4f, %.4f)",
         ps[framebase + bestparticle].pos[0],
         ps[framebase + bestparticle].pos[1],
-        ps[framebase + bestparticle].pos[2]
-      );
-      DrawText(s, 10, 150, 16, bodycolour[(int)phs[bestparticle].body]);
+        ps[framebase + bestparticle].pos[2]);
+      MyDrawText(s, 10, (ybase += yskip), 16, tint);
+      snprintf(s, sizeof s, "radius %.4f\n", phs[bestparticle].radius);
+      MyDrawText(s, 10, (ybase += yskip), 16, tint);
+      snprintf(s, sizeof s, "mass   %.4f\n", phs[bestparticle].mass);
+      MyDrawText(s, 10, (ybase += yskip), 16, tint);
+      snprintf(s, sizeof s, "elast  %.4f\n", phs[bestparticle].elas);
+      MyDrawText(s, 10, (ybase += yskip), 16, tint);
+      ybase += 10;
       #define sqr(_x) ((_x) * (_x))
       for (int j = 0; j < 5; j++) {
-        snprintf(s, sizeof s, "%-16s: %.5f", forcenames[j],
+        snprintf(s, sizeof s, "%-10s %.5f", forcenames[j],
           sqrtf(
             sqr(ps[framebase + bestparticle].force[j][0]) +
             sqr(ps[framebase + bestparticle].force[j][1]) +
             sqr(ps[framebase + bestparticle].force[j][2])
           ));
-        DrawText(s, 10, 230 + j * 20, 16, (Color){
-          bodycolour[(int)phs[bestparticle].body].r * 2 / 3,
-          bodycolour[(int)phs[bestparticle].body].g * 2 / 3,
-          bodycolour[(int)phs[bestparticle].body].b * 2 / 3,
+        MyDrawText(s, 10, (ybase += yskip), 16, (Color){
+          (int)bodycolour[(int)phs[bestparticle].body].r * 2 / 3,
+          (int)bodycolour[(int)phs[bestparticle].body].g * 2 / 3,
+          (int)bodycolour[(int)phs[bestparticle].body].b * 2 / 3,
           255
         });
       }
       #undef sqr
+      ybase += 10;
       if (ps[framebase + bestparticle].contact[0] != -1) {
         char *ss = s;
         char *end = s + sizeof s;
@@ -230,7 +265,7 @@ int main(int argc, char *argv[])
               (int)ps[framebase + bestparticle].contact[j]
             );
           }
-        DrawText(s, 10, 330, 16, (Color){64, 64, 64, 255});
+        MyDrawText(s, 10, (ybase += yskip), 16, (Color){64, 64, 64, 255});
       }
     }
 
