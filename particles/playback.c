@@ -88,8 +88,6 @@ int main(int argc, char *argv[])
     30,
     CAMERA_PERSPECTIVE
   };
-  // SetCameraMode(camera, CAMERA_FIRST_PERSON);
-  // SetCameraMode(camera, CAMERA_ORBITAL);
 
   int frame = 0;
   int forcemask = 0;
@@ -99,12 +97,11 @@ int main(int argc, char *argv[])
     BeginDrawing();
     ClearBackground(RAYWHITE);
 
-    if (IsKeyDown(KEY_SPACE))
-      frame = (frame + (IsKeyDown(KEY_LEFT_SHIFT) ? (nframes - 10) : 10)) % nframes;
-    else if (IsKeyPressed(KEY_DOWN))
-      frame = (frame + (IsKeyDown(KEY_LEFT_SHIFT) ? 1 : 10)) % nframes;
-    else if (IsKeyPressed(KEY_UP))
-      frame = (frame + nframes - (IsKeyDown(KEY_LEFT_SHIFT) ? 1 : 10)) % nframes;
+    int amount = (IsKeyDown(KEY_LEFT_SHIFT) ? 1 : 10);
+    if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_SPACE)) frame = (frame + amount) % nframes;
+    if (IsKeyDown(KEY_LEFT)) frame = (frame + nframes - amount) % nframes;
+    if (IsKeyPressed(KEY_DOWN)) frame = (frame + amount) % nframes;
+    if (IsKeyPressed(KEY_UP)) frame = (frame + nframes - amount) % nframes;
     int framebase = frame * N;
 
     if (IsKeyDown(KEY_A) || IsKeyDown(KEY_D)) {
@@ -208,11 +205,11 @@ int main(int argc, char *argv[])
           ps[framebase + i].force[j][2],
         };
         DrawLine3D(position,
-          Vector3Add(position, Vector3Scale(force, 5e-3)),
+          Vector3Add(position, Vector3Scale(force, 5e-4)),
           (Color){
-            (int)bodycolour[(int)phs[i].body].r * 2 / 3,
-            (int)bodycolour[(int)phs[i].body].g * 2 / 3,
-            (int)bodycolour[(int)phs[i].body].b * 2 / 3,
+            (int)bodycolour[(int)phs[i].body].r * 3 / 4,
+            (int)bodycolour[(int)phs[i].body].g * 3 / 4,
+            (int)bodycolour[(int)phs[i].body].b * 3 / 4,
             255
           }
         );

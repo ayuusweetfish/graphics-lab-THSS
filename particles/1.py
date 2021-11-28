@@ -113,7 +113,7 @@ def init():
     for j in range(i * 8, i * 8 + 8):
       body[j] = i
       elas[j] = 0.9 - 0.6 * (i % 8) / 7
-      m[j] = 5 if i % 200 != 0 else 200
+      m[j] = 5 if i % 50 != 0 else 200
       radius[j] = R * scale
       bodyMas[i] += m[j]
       cm += m[j] * x0[j]
