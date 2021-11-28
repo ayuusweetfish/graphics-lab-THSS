@@ -13,14 +13,15 @@ Ks = 30000  # Repulsive force coefficient
 Eta = 1500  # Damping force coefficient
 Kt = 1      # Shearing force coefficient
 Mu = 0.2    # Friction coefficient
-KsB = 30000 # Repulsive force coefficient for the floor
+KsB = 2e5   # Repulsive force coefficient for the floor
+EtaB = 2000 # Damping force coefficient for the floor
 
 # Maximum linear velocity and angular velocity
 Vmax = 3
 Amax = math.pi * 2
 
 # N = number of particles
-N = 8888#8
+N = 888#88
 x0 = ti.Vector.field(3, float)  # Position relative to body origin
 m = ti.field(float)             # Mass
 x = ti.Vector.field(3, float)   # World position
@@ -46,7 +47,7 @@ rsTempProjIdx = ti.field(int)   # Double buffering, see sorting subroutine
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N * 2).place(rsTempProjPos, rsTempProjIdx)
 
-M = 1111#1
+M = 111#11
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
 bodyVel = ti.Vector.field(3, float)
@@ -111,7 +112,7 @@ def init():
     cm = ti.Vector([0.0, 0.0, 0.0])
     for j in range(i * 8, i * 8 + 8):
       body[j] = i
-      elas[j] = 0.6 - 0.3 * (i % 8) / 7
+      elas[j] = 0.9 - 0.6 * (i % 8) / 7
       m[j] = 5 if i % 200 != 0 else 200
       radius[j] = R * scale
       bodyMas[i] += m[j]
@@ -400,33 +401,32 @@ def step():
       t += (x[i] - bodyPos[b]).cross(grav)
 
     # Impulse from the floor
-    # TODO: Do not use representative
-    # Find the representative contacting particle
-    # which is determined by maximum velocity along the vertical axis
-    boundaryY = 0.0
-    boundaryYPart = 0
+    # Weight is distributed among those intersecting the floor
+    # by distance of penetration
+    penSum = 0.0
     for i in range(bodyIdx[b][0], bodyIdx[b][1]):
-      if (abs(v[i].y) > abs(boundaryY) and
-          x[i].y < radius[i]):
-        boundaryY = v[i].y
-        boundaryYPart = i
+      pen = radius[i] - x[i].y
+      if pen > 0: penSum += pen
 
-    if boundaryY != 0:
-      i = boundaryYPart
-      impF = ti.Vector([0.0, 0.0, 0.0])
-      impF.y = -min(0, bodyVel[b].y) * bodyMas[b] / dt * elas[i]
-      impF.y += KsB * (radius[i] - x[i].y)
-      particleF[i, 3] += impF
-      # Friction
-      paraV = v[i].xz.norm()
-      fricF = max(-f.y, 0) * Mu
-      if paraV >= 1e-5:
-        impF.x -= v[i].x / paraV * fricF
-        impF.z -= v[i].z / paraV * fricF
-        particleF[i, 4].x -= v[i].x / paraV * fricF
-        particleF[i, 4].z -= v[i].z / paraV * fricF
-      f += impF
-      t += (x[i] - bodyPos[b]).cross(impF)
+    if penSum != 0:
+      for i in range(bodyIdx[b][0], bodyIdx[b][1]):
+        pen = radius[i] - x[i].y
+        if pen <= 0: continue
+        weight = pen / penSum
+        impF = ti.Vector([0.0, 0.0, 0.0])
+        impF.y += KsB * pen
+        impF.y -= v[i].y * EtaB * elas[i]
+        particleF[i, 3] += impF
+        # Friction
+        paraV = v[i].xz.norm()
+        fricF = max(-f.y, 0) * Mu * weight
+        if paraV >= 1e-5:
+          impF.x -= v[i].x / paraV * fricF
+          impF.z -= v[i].z / paraV * fricF
+          particleF[i, 4].x -= v[i].x / paraV * fricF
+          particleF[i, 4].z -= v[i].z / paraV * fricF
+        f += impF
+        t += (x[i] - bodyPos[b]).cross(impF)
 
     # External pulling force
     pullF = ti.Vector([0.0, 0.0, 0.0])

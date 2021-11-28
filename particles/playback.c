@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define N 8888
+#define N 888
 
 typedef struct particle_header {
   float radius;
