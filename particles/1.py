@@ -21,7 +21,7 @@ Vmax = 3
 Amax = math.pi * 2
 
 # N = number of particles
-N = 888#88
+N = 8888#8
 x0 = ti.Vector.field(3, float)  # Position relative to body origin
 m = ti.field(float)             # Mass
 x = ti.Vector.field(3, float)   # World position
@@ -47,7 +47,7 @@ rsTempProjIdx = ti.field(int)   # Double buffering, see sorting subroutine
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N * 2).place(rsTempProjPos, rsTempProjIdx)
 
-M = 111#11
+M = 1111#1
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
 bodyVel = ti.Vector.field(3, float)
@@ -95,7 +95,7 @@ def init():
     x0[i * 8 + 6] = ti.Vector([4.0, 0.0, 0.0]) * (R * scale)
     x0[i * 8 + 7] = ti.Vector([-4.0, 0.0, 0.0]) * (R * scale)
     bodyPos[i] = ti.Vector([
-      -0.5 + R * 4.8 * (i % 71 - 35),
+      -0.5 + R * 6.0 * (i % 71 - 35),
       R * 6.4 * float(i // 71 + 1) + R,
       R * 7.5 * (i % 31 - 15 + 0.009 * (i % 97)),
     ])
@@ -187,13 +187,13 @@ def colliResp(i, j, bodyi, radiusi, xi, vi):
       fSum[bodyj] -= f
       tSum[bodyj] -= (xj - bodyPos[bodyj]).cross(f)
       for k in range(3):
-        if particleFContact[i, k] == -1:
-          particleFContact[i, k] = j
+        if ti.atomic_add(particleFContact[i, k], float(j + 1)) == -1:
           break
+        ti.atomic_add(particleFContact[i, k], -float(j + 1))
       for k in range(3):
-        if particleFContact[j, k] == -1:
-          particleFContact[j, k] = i
+        if ti.atomic_add(particleFContact[j, k], float(i + 1)) == -1:
           break
+        ti.atomic_add(particleFContact[j, k], -float(i + 1))
 
 # A pass of radix sort
 # `N`: number of elements
@@ -585,7 +585,7 @@ camera = ti.ui.make_camera()
 
 step()
 
-record = True
+record = False
 def npFlatten(field):
   arr = field.to_numpy()
   shape = arr.shape

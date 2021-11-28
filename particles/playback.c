@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define N 888
+#define N 8888
 
 typedef struct particle_header {
   float radius;
@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
     (Vector3){4, 5, 6},
     (Vector3){0, 0, 0},
     (Vector3){0, 1, 0},
-    30,
+    45,
     CAMERA_PERSPECTIVE
   };
 
@@ -123,9 +123,13 @@ int main(int argc, char *argv[])
       int rate = 0;
       if (IsKeyDown(KEY_S)) rate -= 1;
       if (IsKeyDown(KEY_W)) rate += 1;
+      Vector3 dir = Vector3Subtract(camera.target, camera.position);
       Vector3 delta = Vector3Scale(
-        Vector3Normalize(Vector3Subtract(camera.target, camera.position)),
-        rate * 0.12
+        Vector3Normalize(   // Assume camera.up is unit
+          Vector3Subtract(dir,
+            Vector3Scale(camera.up, Vector3DotProduct(dir, camera.up)))
+        ),
+        rate * 0.03
       );
       camera.position = Vector3Add(camera.position, delta);
       camera.target = Vector3Add(camera.target, delta);
@@ -140,6 +144,17 @@ int main(int argc, char *argv[])
       );
       camera.position = Vector3Add(camera.position, delta);
       camera.target = Vector3Add(camera.target, delta);
+    }
+    if (IsKeyDown(KEY_E) || IsKeyDown(KEY_R)) {
+      int rate = 0;
+      if (IsKeyDown(KEY_E)) rate -= 1;
+      if (IsKeyDown(KEY_R)) rate += 1;
+      camera.target = Vector3Add(
+        camera.position,
+        Vector3Transform(
+          Vector3Subtract(camera.target, camera.position),
+          MatrixRotate(camera.up, rate * -0.01))
+      );
     }
 
     if (IsKeyPressed(KEY_ONE)) forcemask ^= (1 << 0);
@@ -161,7 +176,7 @@ int main(int argc, char *argv[])
         ps[framebase + i].pos[2],
       };
       RayCollision colli = GetRayCollisionSphere(ray, position, phs[i].radius);
-      if (colli.hit && colli.distance < bestdistance) {
+      if (colli.hit && colli.distance < bestdistance && colli.distance >= 0.2) {
         bestdistance = colli.distance;
         bestparticle = i;
       }
@@ -227,7 +242,7 @@ int main(int argc, char *argv[])
       }
     }
     // Floor
-    const int gridsize = 20;
+    const int gridsize = 30;
     const float cellsize = 0.5;
     for (int x = -gridsize; x <= gridsize; x++)
       for (int z = -gridsize; z <= gridsize; z++) {
