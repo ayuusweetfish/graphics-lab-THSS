@@ -21,7 +21,7 @@ Vmax = 3
 Amax = math.pi * 2
 
 # N = number of particles
-N = 8888#8
+N = 1111#1
 x0 = ti.Vector.field(3, float)  # Position relative to body origin
 m = ti.field(float)             # Mass
 x = ti.Vector.field(3, float)   # World position
@@ -86,20 +86,13 @@ def init():
   for i in range(M):
     # Represent the torus-with-handles shape with eight particles
     scale = 0.6 + 0.4 * (i % 8) / 7
-    x0[i * 8 + 0] = ti.Vector([2.0, 0.0, 0.0]) * (R * scale)
-    x0[i * 8 + 1] = ti.Vector([-2.0, 0.0, 0.0]) * (R * scale)
-    x0[i * 8 + 2] = ti.Vector([1.0, 3.0**0.5, 0.0]) * (R * scale)
-    x0[i * 8 + 3] = ti.Vector([1.0, -3.0**0.5, 0.0]) * (R * scale)
-    x0[i * 8 + 4] = ti.Vector([-1.0, 3.0**0.5, 0.0]) * (R * scale)
-    x0[i * 8 + 5] = ti.Vector([-1.0, -3.0**0.5, 0.0]) * (R * scale)
-    x0[i * 8 + 6] = ti.Vector([4.0, 0.0, 0.0]) * (R * scale)
-    x0[i * 8 + 7] = ti.Vector([-4.0, 0.0, 0.0]) * (R * scale)
+    x0[i * 1 + 0] = ti.Vector([0.0, 0.0, 0.0]) * (R * scale)
     bodyPos[i] = ti.Vector([
-      -0.5 + R * 6.0 * (i % 71 - 35),
-      R * 6.4 * float(i // 71 + 1) + R,
-      R * 7.5 * (i % 31 - 15 + 0.009 * (i % 97)),
+      -0.5 + R * 2.0 * (i % 71 - 35),
+      R * 2.4 * float(i // 71 + 1) + R,
+      R * 3.5 * (i % 31 - 15 + 0.009 * (i % 97)),
     ])
-    bodyIdx[i] = ti.Vector([i * 8, i * 8 + 8])
+    bodyIdx[i] = ti.Vector([i * 1, i * 1 + 1])
     rand = ((i * (i % 4 + i * (i // 3) % 17 + 2) + 24) % 97) / 97
     bodyVel[i] = ti.Vector([-0.2, rand * 0.5, 0])
     bodyAcc[i] = ti.Vector([0, 0, 0])
@@ -110,22 +103,23 @@ def init():
     ine = ti.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
     # Normalize position
     cm = ti.Vector([0.0, 0.0, 0.0])
-    for j in range(i * 8, i * 8 + 8):
+    for j in range(i * 1, i * 1 + 1):
       body[j] = i
       elas[j] = 0.9 - 0.6 * (i % 8) / 7
       m[j] = 5 if i % 50 != 0 else 200
       radius[j] = R * scale
       bodyMas[i] += m[j]
       cm += m[j] * x0[j]
-    cm /= 8
-    for j in range(i * 8, i * 8 + 8): x0[j] -= cm
+    cm /= 1
+    for j in range(i * 1, i * 1 + 1): x0[j] -= cm
     # Inertia tensor
-    for j in range(i * 8, i * 8 + 8):
+    for j in range(i * 1, i * 1 + 1):
       for p, q in ti.static(ti.ndrange(3, 3)):
         ine[p, q] -= m[j] * x0[j][p] * x0[j][q]
         if p == q:
           ine[p, q] += m[j] * x0[j].norm() ** 2
     bodyIne[i] = ine.inverse()
+    bodyIne[i].fill(math.inf)
 
 # Quaternion multiplication
 @ti.func
@@ -291,7 +285,7 @@ def step():
   # Calculate particle position and velocity
   for i in range(M):
     for j in range(bodyIdx[i][0], bodyIdx[i][1]):
-      r = quat_rot(x0[j], bodyOri[i])
+      r = ti.Vector([0.0, 0.0, 0.0])
       x[j] = bodyPos[i] + r
       v[j] = bodyVel[i] + bodyAng[i].cross(r)
 
