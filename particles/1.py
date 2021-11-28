@@ -299,7 +299,7 @@ def step():
     tSum[b] = ti.Vector([0.0, 0.0, 0.0])
 
   for i in range(N):
-    for j in ti.static(range(6)): particleF[i, j].fill(0)
+    for j in ti.static(range(5)): particleF[i, j].fill(0)
     for j in ti.static(range(3)): particleFContact[i, j] = -1
 
   # Collisions
@@ -615,7 +615,7 @@ if record:
 
 while window.running:
   frameCount += 1
-  if record and frameCount > 200: break
+  if record and frameCount > 400: break
 
   pullCloseInput[0] = 1 if window.is_pressed(ti.ui.UP) else 0
   pullCloseInput[1] = 1 if window.is_pressed(ti.ui.LEFT) else 0
@@ -628,6 +628,7 @@ while window.running:
       combined = np.concatenate((
         npFlatten(particleF),
         npFlatten(x),
+        npFlatten(v),
         npFlatten(particleFContact),
       ), axis=1, dtype='float32')
       recordFile.write(combined.tobytes())
