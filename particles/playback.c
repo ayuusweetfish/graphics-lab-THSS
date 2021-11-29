@@ -354,6 +354,11 @@ int main(int argc, char *argv[])
     }
 
     EndDrawing();
+
+    if (IsKeyPressed(KEY_ENTER)) {
+      snprintf(s, sizeof s, "wf%02d.png", frame);
+      TakeScreenshot(s);
+    }
   }
 
   CloseWindow();

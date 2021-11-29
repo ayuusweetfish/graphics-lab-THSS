@@ -598,6 +598,7 @@ step()
 
 # For recording
 record = True
+recordScreenshot = False
 # Flattens a Taichi field into a NumPy array of (N, ?)
 def npFlatten(field):
   arr = field.to_numpy()
@@ -661,6 +662,14 @@ while window.running:
   scene.mesh(boundVerts, indices=boundInds, color=(floorR, floorG, floorB), two_sided=True)
   scene.mesh(particleVerts, indices=particleVertInds, color=(0.85, 0.7, 0.55), two_sided=True)
   canvas.scene(scene)
+  if recordScreenshot:
+    fileName = 'ti%02d.png' % frameCount
+    window.write_image(
+      os.path.join(
+        os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__))),
+        fileName
+      )
+    )
   window.show()
   # print(debug)
 
