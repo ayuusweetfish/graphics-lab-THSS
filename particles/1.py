@@ -636,7 +636,8 @@ if record:
     npFlatten(body)
   ), axis=1, dtype='float32').tobytes())
 
-while window.running:
+# Show the window, saving a screenshot if requested
+def render(skipScrenshot=False):
   updateMesh()
 
   camera.position(4, 5, 6)
@@ -654,7 +655,7 @@ while window.running:
   scene.mesh(boundVerts, indices=boundInds, color=(floorR, floorG, floorB), two_sided=True)
   scene.mesh(particleVerts, indices=particleVertInds, color=(0.85, 0.7, 0.55), two_sided=True)
   canvas.scene(scene)
-  if recordScreenshot:
+  if recordScreenshot and not skipScrenshot:
     fileName = 'ti%02d.png' % frameCount
     window.write_image(
       os.path.join(
@@ -664,7 +665,12 @@ while window.running:
     )
   window.show()
 
-  if record and frameCount > recordFrames: break
+# Workaround for Taichi 0.8.5 rendering lighting incorrectly on the first frame
+render(skipScrenshot=True)
+
+while window.running:
+  render()
+  if record and frameCount >= recordFrames: break
 
   pullCloseInput[0] = 1 if window.is_pressed(ti.ui.UP) else 0
   pullCloseInput[1] = 1 if window.is_pressed(ti.ui.LEFT) else 0
