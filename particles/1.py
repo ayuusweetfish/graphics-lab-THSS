@@ -13,8 +13,8 @@ Ks = 30000  # Repulsive force coefficient
 Eta = 1500  # Damping force coefficient
 Kt = 100    # Shearing force coefficient
 Mu = 0.2    # Friction coefficient
-KsB = 2e5   # Repulsive force coefficient for the floor
-EtaB = 2000 # Damping force coefficient for the floor
+KsB = 5000  # Repulsive force coefficient for the floor
+EtaB = 50   # Damping force coefficient for the floor
 
 # Maximum linear velocity and angular velocity
 Vmax = 3
@@ -424,6 +424,7 @@ def step():
         impF = ti.Vector([0.0, 0.0, 0.0])
         impF.y += KsB * pen               # Hooke's law
         impF.y -= v[i].y * EtaB * elas[i] # Damping
+        impF.y *= bodyMas[b]  # Scale with body mass (gravitational weight)
         particleF[i, 3] += impF
         # Friction
         paraV = v[i].xz.norm()
