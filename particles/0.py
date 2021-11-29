@@ -86,13 +86,15 @@ def init():
   for i in range(M):
     # Represent the torus-with-handles shape with eight particles
     scale = 0.6 + 0.4 * (i % 8) / 7
-    x0[i * 1 + 0] = ti.Vector([0.0, 0.0, 0.0]) * (R * scale)
+    nstart = i
+    nv = 1
+    x0[nstart + 0] = ti.Vector([0.0, 0.0, 0.0]) * (R * scale)
     bodyPos[i] = ti.Vector([
       -0.5 + R * 2.0 * (i % 71 - 35),
       R * 2.4 * float(i // 71 + 1) + R,
       R * 3.5 * (i % 31 - 15 + 0.009 * (i % 97)),
     ])
-    bodyIdx[i] = ti.Vector([i * 1, i * 1 + 1])
+    bodyIdx[i] = ti.Vector([nstart, nstart + nv])
     rand = ((i * (i % 4 + i * (i // 3) % 17 + 2) + 24) % 97) / 97
     bodyVel[i] = ti.Vector([-0.2, rand * 0.5, 0])
     bodyAcc[i] = ti.Vector([0, 0, 0])
@@ -103,21 +105,27 @@ def init():
     ine = ti.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
     # Normalize position
     cm = ti.Vector([0.0, 0.0, 0.0])
-    for j in range(i * 1, i * 1 + 1):
+    for j in range(nstart, nstart + nv):
       body[j] = i
       elas[j] = 0.9 - 0.6 * (i % 8) / 7
       m[j] = 5 if i % 50 != 0 else 200
       radius[j] = R * scale
       bodyMas[i] += m[j]
       cm += m[j] * x0[j]
-    cm /= 1
-    for j in range(i * 1, i * 1 + 1): x0[j] -= cm
+    cm /= nv
+    for j in range(nstart, nstart + nv): x0[j] -= cm
     # Inertia tensor
-    for j in range(i * 1, i * 1 + 1):
+    for j in range(nstart, nstart + nv):
       for p, q in ti.static(ti.ndrange(3, 3)):
         ine[p, q] -= m[j] * x0[j][p] * x0[j][q]
         if p == q:
           ine[p, q] += m[j] * x0[j].norm() ** 2
+    # Fix anomalies: for axes for which the moment of inertia is zero,
+    # remove the corresponding row and column from consideration
+    for p in ti.static(range(3)):
+      if abs(ine[p, p]) <= 1e-6:
+        for q in ti.static(range(3)): ine[p, q] = ine[q, p] = 0
+        ine[p, p] = 1
     bodyIne[i] = ine.inverse()
     bodyIne[i].fill(math.inf)
 
@@ -522,18 +530,19 @@ for subdivision in range(2):
 
 IcosphereNumVerts = len(icosphereVerts)
 IcosphereNumTris = len(icosphereTris)
-NumVerts = M * IcosphereNumVerts
-NumTris = M * IcosphereNumTris
-particleVerts = ti.Vector.field(3, float, NumVerts)
-particleVertStart = ti.field(int, M)
-particleVertInds = ti.field(int, NumTris * 3)
-
 # Initial positions (relative to local origin) of the shape
 icosphereInitPos = ti.Vector.field(3, float, IcosphereNumVerts)
 icosphereInitPos.from_numpy(np.array(icosphereVerts, dtype=np.float32))
 icosphereTrisField = ti.field(int, IcosphereNumTris * 3)
 icosphereTrisField.from_numpy(
   np.resize(np.array(icosphereTris, dtype=np.int32), (IcosphereNumTris * 3,)))
+
+# All vertices and triangles
+NumVerts = M * IcosphereNumVerts
+NumTris = M * IcosphereNumTris
+particleVerts = ti.Vector.field(3, float, NumVerts)
+particleVertStart = ti.field(int, M)
+particleVertInds = ti.field(int, NumTris * 3)
 
 @ti.kernel
 def buildMesh():

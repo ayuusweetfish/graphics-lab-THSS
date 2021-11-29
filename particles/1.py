@@ -21,7 +21,7 @@ Vmax = 3
 Amax = math.pi * 2
 
 # N = number of particles
-N = 8888#8
+N = 1111*8 + 111*7
 x0 = ti.Vector.field(3, float)  # Position relative to body origin
 m = ti.field(float)             # Mass
 x = ti.Vector.field(3, float)   # World position
@@ -47,7 +47,7 @@ rsTempProjIdx = ti.field(int)   # Double buffering, see sorting subroutine
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N * 2).place(rsTempProjPos, rsTempProjIdx)
 
-M = 1111#1
+M = 1111 + 111
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
 bodyVel = ti.Vector.field(3, float)
@@ -84,22 +84,33 @@ debug = ti.field(float, (10,))
 @ti.kernel
 def init():
   for i in range(M):
-    # Represent the torus-with-handles shape with eight particles
     scale = 0.6 + 0.4 * (i % 8) / 7
-    x0[i * 8 + 0] = ti.Vector([2.0, 0.0, 0.0]) * (R * scale)
-    x0[i * 8 + 1] = ti.Vector([-2.0, 0.0, 0.0]) * (R * scale)
-    x0[i * 8 + 2] = ti.Vector([1.0, 3.0**0.5, 0.0]) * (R * scale)
-    x0[i * 8 + 3] = ti.Vector([1.0, -3.0**0.5, 0.0]) * (R * scale)
-    x0[i * 8 + 4] = ti.Vector([-1.0, 3.0**0.5, 0.0]) * (R * scale)
-    x0[i * 8 + 5] = ti.Vector([-1.0, -3.0**0.5, 0.0]) * (R * scale)
-    x0[i * 8 + 6] = ti.Vector([4.0, 0.0, 0.0]) * (R * scale)
-    x0[i * 8 + 7] = ti.Vector([-4.0, 0.0, 0.0]) * (R * scale)
+    nv = 0      # Number of vertices
+    nstart = 0  # Start index of vertices
+    if i < 1111:
+      # Represent the torus-with-handles shape with eight particles
+      nv = 8
+      nstart = i * 8
+      x0[nstart + 0] = ti.Vector([2.0, 0.0, 0.0]) * (R * scale)
+      x0[nstart + 1] = ti.Vector([-2.0, 0.0, 0.0]) * (R * scale)
+      x0[nstart + 2] = ti.Vector([1.0, 3.0**0.5, 0.0]) * (R * scale)
+      x0[nstart + 3] = ti.Vector([1.0, -3.0**0.5, 0.0]) * (R * scale)
+      x0[nstart + 4] = ti.Vector([-1.0, 3.0**0.5, 0.0]) * (R * scale)
+      x0[nstart + 5] = ti.Vector([-1.0, -3.0**0.5, 0.0]) * (R * scale)
+      x0[nstart + 6] = ti.Vector([4.0, 0.0, 0.0]) * (R * scale)
+      x0[nstart + 7] = ti.Vector([-4.0, 0.0, 0.0]) * (R * scale)
+    elif i < 1111 + 111:
+      # Represent the stick shape with seven particles
+      nv = 7
+      nstart = 1111 * 8 + (i - 1111) * 7
+      for k in ti.static(range(7)):
+        x0[nstart + k] = ti.Vector([float(k)*2 - 6.0, 0.0, 0.0]) * (R * scale)
     bodyPos[i] = ti.Vector([
       -0.5 + R * 6.0 * (i % 71 - 35),
       R * 6.4 * float(i // 71 + 1) + R,
       R * 7.5 * (i % 31 - 15 + 0.009 * (i % 97)),
     ])
-    bodyIdx[i] = ti.Vector([i * 8, i * 8 + 8])
+    bodyIdx[i] = ti.Vector([nstart, nstart + nv])
     rand = ((i * (i % 4 + i * (i // 3) % 17 + 2) + 24) % 97) / 97
     bodyVel[i] = ti.Vector([-0.2, rand * 0.5, 0])
     bodyAcc[i] = ti.Vector([0, 0, 0])
@@ -110,21 +121,27 @@ def init():
     ine = ti.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
     # Normalize position
     cm = ti.Vector([0.0, 0.0, 0.0])
-    for j in range(i * 8, i * 8 + 8):
+    for j in range(nstart, nstart + nv):
       body[j] = i
       elas[j] = 0.9 - 0.6 * (i % 8) / 7
       m[j] = 5 if i % 50 != 0 else 200
       radius[j] = R * scale
       bodyMas[i] += m[j]
       cm += m[j] * x0[j]
-    cm /= 8
-    for j in range(i * 8, i * 8 + 8): x0[j] -= cm
+    cm /= nv
+    for j in range(nstart, nstart + nv): x0[j] -= cm
     # Inertia tensor
-    for j in range(i * 8, i * 8 + 8):
+    for j in range(nstart, nstart + nv):
       for p, q in ti.static(ti.ndrange(3, 3)):
         ine[p, q] -= m[j] * x0[j][p] * x0[j][q]
         if p == q:
           ine[p, q] += m[j] * x0[j].norm() ** 2
+    # Fix anomalies: for axes for which the moment of inertia is zero,
+    # remove the corresponding row and column from consideration
+    for p in ti.static(range(3)):
+      if abs(ine[p, p]) <= 1e-6:
+        for q in ti.static(range(3)): ine[p, q] = ine[q, p] = 0
+        ine[p, p] = 1
     bodyIne[i] = ine.inverse()
 
 # Quaternion multiplication
@@ -501,17 +518,25 @@ HemisPlSd = 6
 HemisOrSd = 4
 PDCBNumVerts = TorusPlSd*TorusOrSd + 2 * (HemisPlSd*(HemisOrSd+1) + 1)
 PDCBNumTris = TorusPlSd*TorusOrSd*2 + 2 * (HemisPlSd*(HemisOrSd*2+1))
-NumVerts = M * PDCBNumVerts
-NumTris = M * PDCBNumTris
+# Initial positions (relative to local origin) of the shape
+pdcbInitPos = ti.Vector.field(3, float, PDCBNumVerts)
+
+# Stick/cylinder shape
+StickSd = 12
+StickNumVerts = StickSd * 2 + 2
+StickNumTris = StickSd * 4
+stickInitPos = ti.Vector.field(3, float, StickNumVerts)
+
+# All vertices and triangles
+NumVerts = 1111 * PDCBNumVerts + 111 * StickNumTris
+NumTris = 1111 * PDCBNumTris + 111 * StickNumTris
 particleVerts = ti.Vector.field(3, float, NumVerts)
 particleVertStart = ti.field(int, M)
 particleVertInds = ti.field(int, NumTris * 3)
 
-# Initial positions (relative to local origin) of the shape
-pdcbInitPos = ti.Vector.field(3, float, PDCBNumVerts)
-
 @ti.kernel
 def buildMesh():
+  # PDCB
   # Torus
   for p in range(TorusPlSd):
     theta = math.pi*2 / TorusPlSd * p
@@ -544,7 +569,7 @@ def buildMesh():
   # Mesh in local coordinates
   vertCount = 0
   indCount = 0
-  for i in range(M):
+  for i in range(1111):
     vertStart = ti.atomic_add(vertCount, PDCBNumVerts)
     indStart = ti.atomic_add(indCount, PDCBNumTris*3)
     particleVertStart[i] = vertStart
@@ -573,16 +598,53 @@ def buildMesh():
             indIdx += 3
           indIdx += 3
 
+  # Stick
+  for t in range(StickSd):
+    theta = math.pi*2 / StickSd * t
+    z = ti.cos(theta)
+    y = ti.sin(theta)
+    stickInitPos[t] = ti.Vector([-R*7, R*y, R*z])
+    stickInitPos[t + StickSd] = ti.Vector([R*7, R*y, R*z])
+  stickInitPos[StickSd*2 + 0] = ti.Vector([-R*7, 0.0, 0.0])
+  stickInitPos[StickSd*2 + 1] = ti.Vector([ R*7, 0.0, 0.0])
+  for i in range(1111, 1111 + 111):
+    vertStart = ti.atomic_add(vertCount, StickNumVerts)
+    indStart = ti.atomic_add(indCount, StickNumTris*3)
+    particleVertStart[i] = vertStart
+    for t in range(StickSd):
+      particleVertInds[indStart + 0] = vertStart + t
+      particleVertInds[indStart + 1] = vertStart + (t+1)%StickSd
+      particleVertInds[indStart + 2] = vertStart + StickSd + t
+      particleVertInds[indStart + 3] = vertStart + StickSd + t
+      particleVertInds[indStart + 4] = vertStart + (t+1)%StickSd
+      particleVertInds[indStart + 5] = vertStart + StickSd + (t+1)%StickSd
+      indStart += 6
+    for t in range(StickSd):
+      particleVertInds[indStart + 1] = vertStart + t
+      particleVertInds[indStart + 0] = vertStart + (t+1)%StickSd
+      particleVertInds[indStart + 2] = vertStart + StickSd*2 + 0
+      particleVertInds[indStart + 3] = vertStart + StickSd + t
+      particleVertInds[indStart + 4] = vertStart + StickSd + (t+1)%StickSd
+      particleVertInds[indStart + 5] = vertStart + StickSd*2 + 1
+      indStart += 6
+
 # Build the mesh for the entire scene
 # according to body position and orientation, and the precalculated shape
 @ti.kernel
 def updateMesh():
-  for i in range(M):
+  for i in range(1111):
     vertStart = particleVertStart[i]
     scale = 0.6 + 0.4 * (i % 8) / 7
     for j in range(PDCBNumVerts):
       particleVerts[vertStart + j] = (
         quat_rot(pdcbInitPos[j] * scale, bodyOri[i]) + bodyPos[i]
+      )
+  for i in range(1111, 1111 + 111):
+    vertStart = particleVertStart[i]
+    scale = 0.6 + 0.4 * (i % 8) / 7
+    for j in range(StickNumVerts):
+      particleVerts[vertStart + j] = (
+        quat_rot(stickInitPos[j] * scale, bodyOri[i]) + bodyPos[i]
       )
 
 init()
