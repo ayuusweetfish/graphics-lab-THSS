@@ -3,11 +3,10 @@
 #include "rlgl.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#define N 8888
 
 typedef struct particle_header {
   float radius;
@@ -42,18 +41,24 @@ static void MyDrawTextLarge(const char *text, int posX, int posY, int fontSize, 
 
 int main(int argc, char *argv[])
 {
-  int framesize = sizeof(particle) * N;
-  int headersize = sizeof(particle_header) * N;
-
   const char *path = "record.bin";
   if (argc > 1) path = argv[1];
 
   FILE *f = fopen(path, "rb");
+
+  int32_t intbuf[2];
+  fread(intbuf, sizeof(int32_t), 2, f);
+  int N = intbuf[0];  // Number of particles
+  int M = intbuf[1];  // Number of bodies
+
+  int framesize = sizeof(particle) * N;
+  int headersize = sizeof(particle_header) * N + sizeof(int32_t) * 2;
+
   fseek(f, 0, SEEK_END);
   int nframes = (ftell(f) - headersize) / framesize;
-  fseek(f, 0, SEEK_SET);
-  printf("%d particles, %d frames\n", N, nframes);
+  printf("%d particles, %d bodies, %d frames\n", N, M, nframes);
 
+  fseek(f, sizeof(int32_t) * 2, SEEK_SET);
   particle_header *phs = (particle_header *)malloc(sizeof(particle_header) * N);
   fread(phs, sizeof(particle_header) * N, 1, f);
   particle *ps = (particle *)malloc(nframes * sizeof(particle) * N);

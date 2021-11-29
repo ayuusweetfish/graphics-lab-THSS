@@ -21,7 +21,7 @@ Vmax = 3
 Amax = math.pi * 2
 
 # N = number of particles
-N = 8888#8
+N = 888#88
 x0 = ti.Vector.field(3, float)  # Position relative to body origin
 m = ti.field(float)             # Mass
 x = ti.Vector.field(3, float)   # World position
@@ -47,7 +47,7 @@ rsTempProjIdx = ti.field(int)   # Double buffering, see sorting subroutine
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N * 2).place(rsTempProjPos, rsTempProjIdx)
 
-M = 1111#1
+M = 111#11
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
 bodyVel = ti.Vector.field(3, float)
@@ -617,6 +617,7 @@ if record:
   )
   print('recording to ' + os.path.realpath(recordFile.name))
   # Write recording header
+  recordFile.write(np.array([N, M], dtype='int32').tobytes())
   recordFile.write(np.concatenate((
     npFlatten(radius),
     npFlatten(m),

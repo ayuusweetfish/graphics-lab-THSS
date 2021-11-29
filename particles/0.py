@@ -591,6 +591,7 @@ if record:
   )
   print('recording to ' + os.path.realpath(recordFile.name))
   # Write recording header
+  recordFile.write(np.array([N, M], dtype='int32').tobytes())
   recordFile.write(np.concatenate((
     npFlatten(radius),
     npFlatten(m),
