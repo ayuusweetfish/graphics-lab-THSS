@@ -572,6 +572,7 @@ step()
 
 # For recording
 record = True
+recordScreenshot = False
 # Flattens a Taichi field into a NumPy array of (N, ?)
 def npFlatten(field):
   arr = field.to_numpy()
@@ -601,15 +602,13 @@ if record:
   ), axis=1, dtype='float32').tobytes())
 
 while window.running:
-  frameCount += 1
-  if record and frameCount > 200: break
+  if record and frameCount > 2000: break
 
   pullCloseInput[0] = 1 if window.is_pressed(ti.ui.UP) else 0
   pullCloseInput[1] = 1 if window.is_pressed(ti.ui.LEFT) else 0
   pullCloseInput[2] = 1 if window.is_pressed(ti.ui.SPACE) else 0
 
   for i in range(10):
-    step()
     if record:
       # Dump relevant data of the current step
       recordFile.write(np.concatenate((
@@ -618,6 +617,8 @@ while window.running:
         npFlatten(v),
         npFlatten(particleFContact),
       ), axis=1, dtype='float32').tobytes())
+    frameCount += 1
+    step()
   updateMesh()
 
   camera.position(4, 5, 6)
@@ -635,6 +636,14 @@ while window.running:
   scene.mesh(boundVerts, indices=boundInds, color=(floorR, floorG, floorB), two_sided=True)
   scene.mesh(particleVerts, indices=particleVertInds, color=(0.85, 0.7, 0.55), two_sided=True)
   canvas.scene(scene)
+  if recordScreenshot:
+    fileName = 'ti%02d.png' % frameCount
+    window.write_image(
+      os.path.join(
+        os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__))),
+        fileName
+      )
+    )
   window.show()
   # print(debug)
 

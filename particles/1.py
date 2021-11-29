@@ -532,7 +532,7 @@ def buildMesh():
       radius = (1 if p == -1 else ti.cos(math.pi/2 * p/HemisOrSd)) * R
       radial = ti.Vector([0, 0, radius])
       up = ti.Vector([0, radius, 0])
-      cx = (2 if p == -1 else 3 + ti.sin(p/HemisOrSd)) * R
+      cx = (2 if p == -1 else 4 + ti.sin(p/HemisOrSd)) * R
       centre = ti.Vector([cx, 0, 0])
       for q in range(HemisPlSd if p < HemisOrSd else 1):
         phi = math.pi*2 / HemisPlSd * q
@@ -628,15 +628,13 @@ if record:
   ), axis=1, dtype='float32').tobytes())
 
 while window.running:
-  frameCount += 1
-  if record and frameCount > 200: break
+  if record and frameCount > 2000: break
 
   pullCloseInput[0] = 1 if window.is_pressed(ti.ui.UP) else 0
   pullCloseInput[1] = 1 if window.is_pressed(ti.ui.LEFT) else 0
   pullCloseInput[2] = 1 if window.is_pressed(ti.ui.SPACE) else 0
 
   for i in range(10):
-    step()
     if record:
       # Dump relevant data of the current step
       recordFile.write(np.concatenate((
@@ -645,6 +643,8 @@ while window.running:
         npFlatten(v),
         npFlatten(particleFContact),
       ), axis=1, dtype='float32').tobytes())
+    frameCount += 1
+    step()
   updateMesh()
 
   camera.position(4, 5, 6)
