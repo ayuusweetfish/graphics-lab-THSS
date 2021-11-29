@@ -138,11 +138,16 @@ def init():
           ine[p, q] += m[j] * x0[j].norm() ** 2
     # Fix anomalies: for axes for which the moment of inertia is zero,
     # remove the corresponding row and column from consideration
+    anom = ti.Vector([0, 0, 0])
     for p in ti.static(range(3)):
       if abs(ine[p, p]) <= 1e-6:
         for q in ti.static(range(3)): ine[p, q] = ine[q, p] = 0
         ine[p, p] = 1
-    bodyIne[i] = ine.inverse()
+        anom[p] = 1
+    ine = ine.inverse()
+    for p in ti.static(range(3)):
+      if anom[p]: ine[p, p] = 0
+    bodyIne[i] = ine
 
 # Quaternion multiplication
 @ti.func
