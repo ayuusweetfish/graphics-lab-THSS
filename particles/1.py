@@ -597,8 +597,18 @@ camera = ti.ui.make_camera()
 step()
 
 # For recording
-record = True
-recordScreenshot = False
+import os
+record = False
+recordFrames = 0
+recordFile = None
+try:
+  f = os.environ['REC'].split(',')
+  recordFrames = int(f[0])
+  recordFile = f[1] if len(f) >= 2 else 'record.bin'
+  record = True
+except:
+  pass
+recordScreenshot = (os.environ.get('SCR') == '1')
 # Flattens a Taichi field into a NumPy array of (N, ?)
 def npFlatten(field):
   arr = field.to_numpy()
@@ -607,13 +617,12 @@ def npFlatten(field):
   for i in range(1, len(shape)): count *= shape[i]
   return np.resize(arr, (shape[0], count))
 
-import os
 frameCount = 0
 if record:
   recordFile = open(
     os.path.join(
       os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__))),
-      'record.bin'
+      recordFile
     ),
     'wb'
   )
@@ -628,7 +637,34 @@ if record:
   ), axis=1, dtype='float32').tobytes())
 
 while window.running:
-  if record and frameCount > 2000: break
+  updateMesh()
+
+  camera.position(4, 5, 6)
+  camera.lookat(0, 0, 0)
+  scene.set_camera(camera)
+
+  # Change floor colour according to input button states
+  floorR, floorG, floorB = 0.7, 0.7, 0.7
+  if pullCloseInput[0] == 1: floorR += 0.1
+  if pullCloseInput[1] == 1: floorG += 0.07
+  if pullCloseInput[2] == 1: floorB += 0.15
+
+  scene.point_light(pos=(0, 4, 6), color=(0.4, 0.4, 0.4))
+  scene.ambient_light(color=(0.7, 0.7, 0.7))
+  scene.mesh(boundVerts, indices=boundInds, color=(floorR, floorG, floorB), two_sided=True)
+  scene.mesh(particleVerts, indices=particleVertInds, color=(0.85, 0.7, 0.55), two_sided=True)
+  canvas.scene(scene)
+  if recordScreenshot:
+    fileName = 'ti%02d.png' % frameCount
+    window.write_image(
+      os.path.join(
+        os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__))),
+        fileName
+      )
+    )
+  window.show()
+
+  if record and frameCount > recordFrames: break
 
   pullCloseInput[0] = 1 if window.is_pressed(ti.ui.UP) else 0
   pullCloseInput[1] = 1 if window.is_pressed(ti.ui.LEFT) else 0
@@ -645,32 +681,5 @@ while window.running:
       ), axis=1, dtype='float32').tobytes())
     frameCount += 1
     step()
-  updateMesh()
-
-  camera.position(4, 5, 6)
-  camera.lookat(0, 0, 0)
-  scene.set_camera(camera)
-
-  # Change floor colour according to input button states
-  floorR, floorG, floorB = 0.8, 0.8, 0.8
-  if pullCloseInput[0] == 1: floorR += 0.1
-  if pullCloseInput[1] == 1: floorG += 0.07
-  if pullCloseInput[2] == 1: floorB += 0.15
-
-  scene.point_light(pos=(0.5, 1, 2), color=(0.4, 0.4, 0.4))
-  scene.ambient_light(color=(0.6, 0.6, 0.6))
-  scene.mesh(boundVerts, indices=boundInds, color=(floorR, floorG, floorB), two_sided=True)
-  scene.mesh(particleVerts, indices=particleVertInds, color=(0.85, 0.7, 0.55), two_sided=True)
-  canvas.scene(scene)
-  if recordScreenshot:
-    fileName = 'ti%02d.png' % frameCount
-    window.write_image(
-      os.path.join(
-        os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__))),
-        fileName
-      )
-    )
-  window.show()
-  # print(debug)
 
 if record: recordFile.close()
