@@ -206,7 +206,10 @@ int main(int argc, char *argv[])
           tint.a = Remap(phs[i].mass, 0, 200, 16, 255);
           break;
         case 1: // elasticity
-          tint.a = Remap(phs[i].elas, 0.9, 0.3, 16, 255);
+          tint.a = Remap(phs[i].elas, 0.9, 0.3, 240, 255);
+          tint.r = Remap(phs[i].elas, 0.9, 0.3, 240, tint.r);
+          tint.g = Remap(phs[i].elas, 0.9, 0.3, 240, tint.g);
+          tint.b = Remap(phs[i].elas, 0.9, 0.3, 240, tint.b);
           break;
         case 2: // contact force
         {
