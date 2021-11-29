@@ -482,89 +482,69 @@ import numpy as np
 boundVerts.from_numpy(np.array(boundVertsL, dtype=np.float32))
 boundInds.from_numpy(np.array(boundIndsL, dtype=np.int32))
 
-# Builder for the torus-with-handles shape,
-# which is abbreviated as PDCB (p-dichlorobenzene)
-# For details, plot the vertices in 3D and all should be visualized!
+# Icosphere
+# ref: http://blog.andreaskahler.com/2009/06/creating-icosphere-mesh-in-code.html
+t = (1 + 5**0.5) / 2
+icosphereVerts = [
+  ti.Vector([-1,  t,  0]).normalized(),
+  ti.Vector([ 1,  t,  0]).normalized(),
+  ti.Vector([-1, -t,  0]).normalized(),
+  ti.Vector([ 1, -t,  0]).normalized(),
+  ti.Vector([ 0, -1,  t]).normalized(),
+  ti.Vector([ 0,  1,  t]).normalized(),
+  ti.Vector([ 0, -1, -t]).normalized(),
+  ti.Vector([ 0,  1, -t]).normalized(),
+  ti.Vector([ t,  0, -1]).normalized(),
+  ti.Vector([ t,  0,  1]).normalized(),
+  ti.Vector([-t,  0, -1]).normalized(),
+  ti.Vector([-t,  0,  1]).normalized(),
+]
+icosphereTris = [
+  [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
+  [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+  [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
+  [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
+]
+# Subdivide
+for subdivision in range(2):
+  newTris = []
+  for [a, b, c] in icosphereTris:
+    icosphereVerts += [
+      ((icosphereVerts[a] + icosphereVerts[b]) / 2).normalized(),
+      ((icosphereVerts[b] + icosphereVerts[c]) / 2).normalized(),
+      ((icosphereVerts[c] + icosphereVerts[a]) / 2).normalized(),
+    ]
+    n = len(icosphereVerts)
+    d, e, f = n-3, n-2, n-1
+    newTris += [[a, d, f], [b, e, d], [c, f, e], [d, e, f]]
+  icosphereTris = newTris
 
-# PlSd = Planar subdivision
-# OrSd = Orbital subdivision
-TorusPlSd = 12  # Approximate the skeleton with 12-sided polygon
-TorusOrSd = 12  # Approximate the section with 12-sided polygon
-HemisPlSd = 6
-HemisOrSd = 4
-PDCBNumVerts = TorusPlSd*TorusOrSd + 2 * (HemisPlSd*(HemisOrSd+1) + 1)
-PDCBNumTris = TorusPlSd*TorusOrSd*2 + 2 * (HemisPlSd*(HemisOrSd*2+1))
-NumVerts = M * PDCBNumVerts
-NumTris = M * PDCBNumTris
+IcosphereNumVerts = len(icosphereVerts)
+IcosphereNumTris = len(icosphereTris)
+NumVerts = M * IcosphereNumVerts
+NumTris = M * IcosphereNumTris
 particleVerts = ti.Vector.field(3, float, NumVerts)
 particleVertStart = ti.field(int, M)
 particleVertInds = ti.field(int, NumTris * 3)
 
 # Initial positions (relative to local origin) of the shape
-pdcbInitPos = ti.Vector.field(3, float, PDCBNumVerts)
+icosphereInitPos = ti.Vector.field(3, float, IcosphereNumVerts)
+icosphereInitPos.from_numpy(np.array(icosphereVerts, dtype=np.float32))
+icosphereTrisField = ti.field(int, IcosphereNumTris * 3)
+icosphereTrisField.from_numpy(
+  np.resize(np.array(icosphereTris, dtype=np.int32), (IcosphereNumTris * 3,)))
 
 @ti.kernel
 def buildMesh():
-  # Torus
-  for p in range(TorusPlSd):
-    theta = math.pi*2 / TorusPlSd * p
-    sinTheta = ti.sin(theta)
-    cosTheta = ti.cos(theta)
-    centre = ti.Vector([cosTheta * R*2, sinTheta * R*2, 0])
-    radial = ti.Vector([cosTheta * R, sinTheta * R, 0])
-    up = ti.Vector([0, 0, R])
-    for q in range(TorusOrSd):
-      phi = math.pi*2 / TorusOrSd * q
-      sinPhi = ti.sin(phi)
-      cosPhi = ti.cos(phi)
-      pdcbInitPos[p*TorusOrSd + q] = centre + radial * cosPhi + up * sinPhi
-  # Handles
-  for h in range(2):
-    base = TorusPlSd*TorusOrSd + h * (HemisPlSd*(HemisOrSd+1) + 1)
-    for p in range(-1, HemisOrSd + 1):
-      radius = (1 if p == -1 else ti.cos(math.pi/2 * p/HemisOrSd)) * R
-      radial = ti.Vector([0, 0, radius])
-      up = ti.Vector([0, radius, 0])
-      cx = (2 if p == -1 else 3 + ti.sin(p/HemisOrSd)) * R
-      centre = ti.Vector([cx, 0, 0])
-      for q in range(HemisPlSd if p < HemisOrSd else 1):
-        phi = math.pi*2 / HemisPlSd * q
-        sinPhi = ti.sin(phi)
-        cosPhi = ti.cos(phi)
-        pdcbInitPos[base + (p+1)*HemisPlSd + q] = (
-          centre + radial * cosPhi + up * sinPhi
-        ) * (h*2 - 1)
   # Mesh in local coordinates
   vertCount = 0
   indCount = 0
   for i in range(M):
-    vertStart = ti.atomic_add(vertCount, PDCBNumVerts)
-    indStart = ti.atomic_add(indCount, PDCBNumTris*3)
+    vertStart = ti.atomic_add(vertCount, IcosphereNumVerts)
+    indStart = ti.atomic_add(indCount, IcosphereNumTris*3)
     particleVertStart[i] = vertStart
-    indIdx = 0
-    for p, q in ti.ndrange(TorusPlSd, TorusOrSd):
-      particleVertInds[indStart + indIdx + 0] = vertStart + p*TorusOrSd + q
-      particleVertInds[indStart + indIdx + 1] = vertStart + p*TorusOrSd + (q+1)%TorusOrSd
-      particleVertInds[indStart + indIdx + 2] = vertStart + ((p+1)%TorusPlSd)*TorusOrSd + q
-      particleVertInds[indStart + indIdx + 4] = vertStart + ((p+1)%TorusPlSd)*TorusOrSd + q
-      particleVertInds[indStart + indIdx + 3] = vertStart + ((p+1)%TorusPlSd)*TorusOrSd + (q+1)%TorusOrSd
-      particleVertInds[indStart + indIdx + 5] = vertStart + p*TorusOrSd + (q+1)%TorusOrSd
-      indIdx += 6
-    for h in range(2):
-      base = vertStart + TorusPlSd*TorusOrSd + h * (HemisPlSd*(HemisOrSd+1) + 1)
-      for p in range(-1, HemisOrSd):
-        for q in range(HemisPlSd):
-          nextLevelQ0 = q if p < HemisOrSd - 1 else 0
-          nextLevelQ1 = (q+1)%HemisPlSd if p < HemisOrSd - 1 else 0
-          particleVertInds[indStart + indIdx + 0] = base + (p+1)*HemisPlSd + q
-          particleVertInds[indStart + indIdx + 1] = base + (p+1)*HemisPlSd + (q+1)%HemisPlSd
-          particleVertInds[indStart + indIdx + 2] = base + (p+2)*HemisPlSd + nextLevelQ0
-          if p < HemisOrSd - 1:
-            particleVertInds[indStart + indIdx + 4] = base + (p+2)*HemisPlSd + nextLevelQ0
-            particleVertInds[indStart + indIdx + 3] = base + (p+2)*HemisPlSd + nextLevelQ1
-            particleVertInds[indStart + indIdx + 5] = base + (p+1)*HemisPlSd + (q+1)%HemisPlSd
-            indIdx += 3
-          indIdx += 3
+    for j in range(IcosphereNumTris * 3):
+      particleVertInds[indStart + j] = vertStart + icosphereTrisField[j]
 
 # Build the mesh for the entire scene
 # according to body position and orientation, and the precalculated shape
@@ -573,9 +553,9 @@ def updateMesh():
   for i in range(M):
     vertStart = particleVertStart[i]
     scale = 0.6 + 0.4 * (i % 8) / 7
-    for j in range(PDCBNumVerts):
+    for j in range(IcosphereNumVerts):
       particleVerts[vertStart + j] = (
-        quat_rot(pdcbInitPos[j] * scale, bodyOri[i]) + bodyPos[i]
+        icosphereInitPos[j] * scale * R + bodyPos[i]
       )
 
 init()
@@ -643,7 +623,7 @@ while window.running:
   scene.set_camera(camera)
 
   # Change floor colour according to input button states
-  floorR, floorG, floorB = 0.7, 0.7, 0.7
+  floorR, floorG, floorB = 0.8, 0.8, 0.8
   if pullCloseInput[0] == 1: floorR += 0.1
   if pullCloseInput[1] == 1: floorG += 0.07
   if pullCloseInput[2] == 1: floorB += 0.15

@@ -649,7 +649,7 @@ while window.running:
   scene.set_camera(camera)
 
   # Change floor colour according to input button states
-  floorR, floorG, floorB = 0.7, 0.7, 0.7
+  floorR, floorG, floorB = 0.8, 0.8, 0.8
   if pullCloseInput[0] == 1: floorR += 0.1
   if pullCloseInput[1] == 1: floorG += 0.07
   if pullCloseInput[2] == 1: floorB += 0.15
