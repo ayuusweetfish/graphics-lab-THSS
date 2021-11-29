@@ -21,7 +21,7 @@ Vmax = 3
 Amax = math.pi * 2
 
 # N = number of particles
-N = 888#88
+N = 8888#8
 x0 = ti.Vector.field(3, float)  # Position relative to body origin
 m = ti.field(float)             # Mass
 x = ti.Vector.field(3, float)   # World position
@@ -47,7 +47,7 @@ rsTempProjIdx = ti.field(int)   # Double buffering, see sorting subroutine
 rsTempProjPos = ti.field(float)
 ti.root.dense(ti.i, N * 2).place(rsTempProjPos, rsTempProjIdx)
 
-M = 111#11
+M = 1111#1
 bodyIdx = ti.Vector.field(2, int)   # (start, end)
 bodyPos = ti.Vector.field(3, float)
 bodyVel = ti.Vector.field(3, float)

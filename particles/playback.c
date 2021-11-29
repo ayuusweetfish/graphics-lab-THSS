@@ -22,7 +22,7 @@ typedef struct particle {
   float contact[3];
 } particle;
 
-static void MyDrawSphereWires(Vector3 centerPos, float radius, int rings, int slices, Color color);
+static void MyDrawSphereWires(Vector3 centerPos, float radius, Color color);
 static void MyDrawCircleFilled3D(Vector3 center, float radius, Color color);
 
 Font font;
@@ -224,9 +224,9 @@ int main(int argc, char *argv[])
         default: break;
       }
       if (i != bestparticle)
-        MyDrawSphereWires(position, phs[i].radius, 7, 7, tint);
+        MyDrawSphereWires(position, phs[i].radius, tint);
       else
-        DrawSphereEx(position, phs[i].radius, 7, 7, tint);
+        DrawSphereEx(position, phs[i].radius, 12, 12, tint);
       // Shadow
       if (position.y <= phs[i].radius * 4) {
         float radius = Clamp((phs[i].radius * 4 - position.y) / 3, 0, phs[i].radius);
@@ -369,9 +369,9 @@ int main(int argc, char *argv[])
 // Drawing subroutines
 // Copied from rmodels.c, raysan5/raylib@ed125f27b01053dfd814a0d847ce7534c0a3ea8d
 // Draw sphere wires
-void MyDrawSphereWires(Vector3 centerPos, float radius, int rings, int slices, Color color)
+void MyDrawSphereWires(Vector3 centerPos, float radius, Color color)
 {
-    int numVertex = (rings + 2)*slices*6;
+    int numVertex = 30 * 4;
     // XXX: rlBegin pads vertices to alignment, may break prior checks?
     rlCheckRenderBatchLimit(numVertex * 2);
 
@@ -382,33 +382,23 @@ void MyDrawSphereWires(Vector3 centerPos, float radius, int rings, int slices, C
 )
     rlBegin(RL_LINES);
         rlColor4ub(color.r, color.g, color.b, color.a);
-
-        for (int i = 0; i < (rings + 2); i++)
-        {
-            for (int j = 0; j < slices; j++)
-            {
-                rlVertex3f(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*i))*sinf(DEG2RAD*(360.0f*j/slices)),
-                           sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*i)),
-                           cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*i))*cosf(DEG2RAD*(360.0f*j/slices)));
-                rlVertex3f(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*sinf(DEG2RAD*(360.0f*(j + 1)/slices)),
-                           sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1))),
-                           cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*cosf(DEG2RAD*(360.0f*(j + 1)/slices)));
-
-                rlVertex3f(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*sinf(DEG2RAD*(360.0f*(j + 1)/slices)),
-                           sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1))),
-                           cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*cosf(DEG2RAD*(360.0f*(j + 1)/slices)));
-                rlVertex3f(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*sinf(DEG2RAD*(360.0f*j/slices)),
-                           sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1))),
-                           cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*cosf(DEG2RAD*(360.0f*j/slices)));
-
-                rlVertex3f(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*sinf(DEG2RAD*(360.0f*j/slices)),
-                           sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1))),
-                           cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*cosf(DEG2RAD*(360.0f*j/slices)));
-                rlVertex3f(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*i))*sinf(DEG2RAD*(360.0f*j/slices)),
-                           sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*i)),
-                           cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*i))*cosf(DEG2RAD*(360.0f*j/slices)));
-            }
-        }
+#define Ax 0.525731112
+#define Bx 0.850650808
+#define Cx 0.000000000
+#define Dx 0.809016994
+#define Ex 0.500000000
+#define Fx 0.309016994
+#define Gx 1.000000000
+#define i(a, b, c, d, e, f) rlVertex3f(a##x, b##x, c##x); rlVertex3f(d##x, e##x, f##x);
+        i(-A,B,C,-D,E,F)i(-D,E,F,-F,D,E)i(-B,C,A,-E,F,D)i(C,A,B,-F,D,E)i(-D,E,F,-E,F,D)i(-E,F,D,-F,D,E)i(-A,B,C,-F,D,E)i(-F,D,E,C,G,C)i(C,A,B,F,D,E)i(A,B,C,C,G,C)i(-F,D,E,F,D,E)i(F,D,E,C,G,C)i(-A,B,C,C,G,C)i(C,G,C,-F,D,-E)i(A,B,C,F,D,-E)i(C,A,-B,-F,D,-E)i(C,G,C,F,D,-E)i(F,D,-E,-F,D,-E)i(-A,B,C,-F,D,-E)i(-F,D,-E,-D,E,-F)i(C,A,-B,-E,F,-D)i(-B,C,-A,-D,E,-F)i(-F,D,-E,-E,F,-D)i(-E,F,-D,-D,E,-F)i(-A,B,C,-D,E,-F)i(-D,E,-F,-D,E,F)i(-B,C,-A,-G,C,C)i(-B,C,A,-D,E,F)i(-D,E,-F,-G,C,C)i(-G,C,C,-D,E,F)i(A,B,C,F,D,E)i(F,D,E,D,E,F)i(C,A,B,E,F,D)i(B,C,A,D,E,F)i(F,D,E,E,F,D)i(E,F,D,D,E,F)i(C,A,B,-E,F,D)i(-E,F,D,C,C,G)i(-B,C,A,-E,-F,D)i(C,-A,B,C,C,G)i(-E,F,D,-E,-F,D)i(-E,-F,D,C,C,G)i(-B,C,A,-G,C,C)i(-G,C,C,-D,-E,F)i(-B,C,-A,-D,-E,-F)i(-A,-B,C,-D,-E,F)i(-G,C,C,-D,-E,-F)i(-D,-E,-F,-D,-E,F)i(-B,C,-A,-E,F,-D)i(-E,F,-D,-E,-F,-D)i(C,A,-B,C,C,-G)i(C,-A,-B,-E,-F,-D)i(-E,F,-D,C,C,-G)i(C,C,-G,-E,-F,-D)i(C,A,-B,F,D,-E)i(F,D,-E,E,F,-D)i(A,B,C,D,E,-F)i(B,C,-A,E,F,-D)i(F,D,-E,D,E,-F)i(D,E,-F,E,F,-D)i(A,-B,C,D,-E,F)i(D,-E,F,F,-D,E)i(B,C,A,E,-F,D)i(C,-A,B,F,-D,E)i(D,-E,F,E,-F,D)i(E,-F,D,F,-D,E)i(A,-B,C,F,-D,E)i(F,-D,E,C,-G,C)i(C,-A,B,-F,-D,E)i(-A,-B,C,C,-G,C)i(F,-D,E,-F,-D,E)i(-F,-D,E,C,-G,C)i(A,-B,C,C,-G,C)i(C,-G,C,F,-D,-E)i(-A,-B,C,-F,-D,-E)i(C,-A,-B,F,-D,-E)i(C,-G,C,-F,-D,-E)i(-F,-D,-E,F,-D,-E)i(A,-B,C,F,-D,-E)i(F,-D,-E,D,-E,-F)i(C,-A,-B,E,-F,-D)i(B,C,-A,D,-E,-F)i(F,-D,-E,E,-F,-D)i(E,-F,-D,D,-E,-F)i(A,-B,C,D,-E,-F)i(D,-E,-F,D,-E,F)i(B,C,-A,G,C,C)i(B,C,A,D,-E,F)i(D,-E,-F,G,C,C)i(G,C,C,D,-E,F)i(C,-A,B,E,-F,D)i(E,-F,D,C,C,G)i(B,C,A,E,F,D)i(C,A,B,C,C,G)i(E,-F,D,E,F,D)i(E,F,D,C,C,G)i(-A,-B,C,-F,-D,E)i(-F,-D,E,-D,-E,F)i(C,-A,B,-E,-F,D)i(-B,C,A,-D,-E,F)i(-F,-D,E,-E,-F,D)i(-E,-F,D,-D,-E,F)i(C,-A,-B,-F,-D,-E)i(-F,-D,-E,-E,-F,-D)i(-A,-B,C,-D,-E,-F)i(-B,C,-A,-E,-F,-D)i(-F,-D,-E,-D,-E,-F)i(-D,-E,-F,-E,-F,-D)i(B,C,-A,E,-F,-D)i(E,-F,-D,E,F,-D)i(C,-A,-B,C,C,-G)i(C,A,-B,E,F,-D)i(E,-F,-D,C,C,-G)i(C,C,-G,E,F,-D)i(B,C,A,G,C,C)i(G,C,C,D,E,F)i(B,C,-A,D,E,-F)i(A,B,C,D,E,F)i(G,C,C,D,E,-F)i(D,E,-F,D,E,F)
+#undef i
+#undef Ax
+#undef Bx
+#undef Cx
+#undef Dx
+#undef Ex
+#undef Fx
+#undef Gx
     rlEnd();
 #undef rlVertex3f
 }
