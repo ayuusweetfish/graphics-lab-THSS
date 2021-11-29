@@ -373,7 +373,7 @@ void MyDrawSphereWires(Vector3 centerPos, float radius, Color color)
 {
     int numVertex = 30 * 4;
     // XXX: rlBegin pads vertices to alignment, may break prior checks?
-    rlCheckRenderBatchLimit(numVertex * 2);
+    rlCheckRenderBatchLimit(numVertex * 3);
 
 #define rlVertex3f(_x, _y, _z) rlVertex3f( \
   (_x) * radius + centerPos.x, \
