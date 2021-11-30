@@ -21,7 +21,7 @@ Vmax = 3
 Amax = math.pi * 2
 
 # N = number of particles
-N = 1111*8 + 111*7
+N = 1111*8 + 111*13
 x0 = ti.Vector.field(3, float)  # Position relative to body origin
 m = ti.field(float)             # Mass
 x = ti.Vector.field(3, float)   # World position
@@ -101,10 +101,14 @@ def init():
       x0[nstart + 7] = ti.Vector([-4.0, 0.0, 0.0]) * (R * scale)
     elif i < 1111 + 111:
       # Represent the stick shape with seven particles
-      nv = 7
-      nstart = 1111 * 8 + (i - 1111) * 7
+      nv = 13
+      nstart = 1111 * 8 + (i - 1111) * 13
       for k in ti.static(range(7)):
         x0[nstart + k] = ti.Vector([float(k)*2 - 6.0, 0.0, 0.0]) * (R * scale)
+      for k in ti.static(range(7, 10)):
+        x0[nstart + k] = ti.Vector([0.0, float(k-7)*2 - 6.0, 0.0]) * (R * scale)
+      for k in ti.static(range(10, 13)):
+        x0[nstart + k] = ti.Vector([0.0, float(k-6)*2 - 6.0, 0.0]) * (R * scale)
     bodyPos[i] = ti.Vector([
       -0.5 + R * 6.0 * (i % 71 - 35),
       R * 6.4 * float(i // 71 + 1) + R,
@@ -528,13 +532,15 @@ pdcbInitPos = ti.Vector.field(3, float, PDCBNumVerts)
 
 # Stick/cylinder shape
 StickSd = 12
-StickNumVerts = StickSd * 2 + 2
-StickNumTris = StickSd * 4
-stickInitPos = ti.Vector.field(3, float, StickNumVerts)
+StickVerts = StickSd * 2 + 2
+StickTris = StickSd * 4
+CrossVerts = StickVerts * 2
+CrossTris = StickTris * 2
+crossInitPos = ti.Vector.field(3, float, CrossVerts)
 
 # All vertices and triangles
-NumVerts = 1111 * PDCBNumVerts + 111 * StickNumTris
-NumTris = 1111 * PDCBNumTris + 111 * StickNumTris
+NumVerts = 1111 * PDCBNumVerts + 111 * CrossTris
+NumTris = 1111 * PDCBNumTris + 111 * CrossTris
 particleVerts = ti.Vector.field(3, float, NumVerts)
 particleVertStart = ti.field(int, M)
 particleVertInds = ti.field(int, NumTris * 3)
@@ -608,13 +614,20 @@ def buildMesh():
     theta = math.pi*2 / StickSd * t
     z = ti.cos(theta)
     y = ti.sin(theta)
-    stickInitPos[t] = ti.Vector([-R*7, R*y, R*z])
-    stickInitPos[t + StickSd] = ti.Vector([R*7, R*y, R*z])
-  stickInitPos[StickSd*2 + 0] = ti.Vector([-R*7, 0.0, 0.0])
-  stickInitPos[StickSd*2 + 1] = ti.Vector([ R*7, 0.0, 0.0])
+    crossInitPos[t] = ti.Vector([-R*7, R*y, R*z])
+    crossInitPos[t + StickSd] = ti.Vector([R*7, R*y, R*z])
+  crossInitPos[StickSd*2 + 0] = ti.Vector([-R*7, 0.0, 0.0])
+  crossInitPos[StickSd*2 + 1] = ti.Vector([ R*7, 0.0, 0.0])
+  # Copy a stick
+  for j in range(StickVerts):
+    crossInitPos[StickVerts + j] = ti.Vector([
+      crossInitPos[j].y,
+      -crossInitPos[j].x,
+      crossInitPos[j].z,
+    ])
   for i in range(1111, 1111 + 111):
-    vertStart = ti.atomic_add(vertCount, StickNumVerts)
-    indStart = ti.atomic_add(indCount, StickNumTris*3)
+    vertStart = ti.atomic_add(vertCount, CrossVerts)
+    indStart = ti.atomic_add(indCount, CrossTris*3)
     particleVertStart[i] = vertStart
     for t in range(StickSd):
       particleVertInds[indStart + 0] = vertStart + t
@@ -632,6 +645,12 @@ def buildMesh():
       particleVertInds[indStart + 4] = vertStart + StickSd + (t+1)%StickSd
       particleVertInds[indStart + 5] = vertStart + StickSd*2 + 1
       indStart += 6
+    # Copy a stick
+    for j in range(StickTris * 3):
+      particleVertInds[indStart + j] = (
+        particleVertInds[indStart + j - StickTris * 3] +
+        StickVerts
+      )
 
 # Build the mesh for the entire scene
 # according to body position and orientation, and the precalculated shape
@@ -647,9 +666,9 @@ def updateMesh():
   for i in range(1111, 1111 + 111):
     vertStart = particleVertStart[i]
     scale = 0.6 + 0.4 * (i % 8) / 7
-    for j in range(StickNumVerts):
+    for j in range(CrossVerts):
       particleVerts[vertStart + j] = (
-        quat_rot(stickInitPos[j] * scale, bodyOri[i]) + bodyPos[i]
+        quat_rot(crossInitPos[j] * scale, bodyOri[i]) + bodyPos[i]
       )
 
 init()
