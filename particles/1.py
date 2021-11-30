@@ -525,8 +525,8 @@ TorusPlSd = 12  # Approximate the skeleton with 12-sided polygon
 TorusOrSd = 12  # Approximate the section with 12-sided polygon
 HemisPlSd = 6
 HemisOrSd = 4
-PDCBNumVerts = TorusPlSd*TorusOrSd + 2 * (HemisPlSd*(HemisOrSd+1) + 1)
-PDCBNumTris = TorusPlSd*TorusOrSd*2 + 2 * (HemisPlSd*(HemisOrSd*2+1))
+PDCBNumVerts = TorusPlSd*TorusOrSd + 6 * (HemisPlSd*(HemisOrSd+1) + 1)
+PDCBNumTris = TorusPlSd*TorusOrSd*2 + 6 * (HemisPlSd*(HemisOrSd*2+1))
 # Initial positions (relative to local origin) of the shape
 pdcbInitPos = ti.Vector.field(3, float, PDCBNumVerts)
 
@@ -563,21 +563,32 @@ def buildMesh():
       cosPhi = ti.cos(phi)
       pdcbInitPos[p*TorusOrSd + q] = centre + radial * cosPhi + up * sinPhi
   # Handles
-  for h in range(2):
+  for h in range(6):
     base = TorusPlSd*TorusOrSd + h * (HemisPlSd*(HemisOrSd+1) + 1)
+    sinTheta = ti.sin(math.pi*2 * h/6)
+    cosTheta = ti.cos(math.pi*2 * h/6)
     for p in range(-1, HemisOrSd + 1):
       radius = (1 if p == -1 else ti.cos(math.pi/2 * p/HemisOrSd)) * R
-      radial = ti.Vector([0, 0, radius])
-      up = ti.Vector([0, radius, 0])
       cx = (2 if p == -1 else 4 + ti.sin(math.pi/2 * p/HemisOrSd)) * R
-      centre = ti.Vector([cx, 0, 0])
+      # Shrink handles at positions 1, 2, 4, 5
+      if h != 0 and h != 3:
+        radius *= 0.8
+        if p == -1: cx = R * 2.1
+        else: cx = R * 2.1 + (cx - R*3) * 0.8
+      radial = ti.Vector([0, 0, radius])
+      # up = ti.Vector([0, radius, 0])
+      # centre = ti.Vector([cx, 0, 0])
+      # Rotate `up` and `centre` vectors around Z axis
+      # `radial` is parallel to the Z axis and does not need to be processed
+      up = ti.Vector([sinTheta*radius, cosTheta*radius, 0])
+      centre = ti.Vector([cosTheta*cx, -sinTheta*cx, 0])
       for q in range(HemisPlSd if p < HemisOrSd else 1):
         phi = math.pi*2 / HemisPlSd * q
         sinPhi = ti.sin(phi)
         cosPhi = ti.cos(phi)
         pdcbInitPos[base + (p+1)*HemisPlSd + q] = (
           centre + radial * cosPhi + up * sinPhi
-        ) * (h*2 - 1)
+        )
   # Mesh in local coordinates
   vertCount = 0
   indCount = 0
@@ -594,7 +605,7 @@ def buildMesh():
       particleVertInds[indStart + indIdx + 3] = vertStart + ((p+1)%TorusPlSd)*TorusOrSd + (q+1)%TorusOrSd
       particleVertInds[indStart + indIdx + 5] = vertStart + p*TorusOrSd + (q+1)%TorusOrSd
       indIdx += 6
-    for h in range(2):
+    for h in range(6):
       base = vertStart + TorusPlSd*TorusOrSd + h * (HemisPlSd*(HemisOrSd+1) + 1)
       for p in range(-1, HemisOrSd):
         for q in range(HemisPlSd):
