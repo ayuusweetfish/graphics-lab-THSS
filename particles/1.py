@@ -532,8 +532,9 @@ pdcbInitPos = ti.Vector.field(3, float, PDCBNumVerts)
 
 # Stick/cylinder shape
 StickSd = 12
-StickVerts = StickSd * 2 + 2
-StickTris = StickSd * 4
+StickEndOrSd = 3
+StickVerts = 2 * (StickSd * StickEndOrSd + 1)
+StickTris = (2*StickSd) * (2*StickEndOrSd)
 CrossVerts = StickVerts * 2
 CrossTris = StickTris * 2
 crossInitPos = ti.Vector.field(3, float, CrossVerts)
@@ -568,7 +569,7 @@ def buildMesh():
       radius = (1 if p == -1 else ti.cos(math.pi/2 * p/HemisOrSd)) * R
       radial = ti.Vector([0, 0, radius])
       up = ti.Vector([0, radius, 0])
-      cx = (2 if p == -1 else 4 + ti.sin(p/HemisOrSd)) * R
+      cx = (2 if p == -1 else 4 + ti.sin(math.pi/2 * p/HemisOrSd)) * R
       centre = ti.Vector([cx, 0, 0])
       for q in range(HemisPlSd if p < HemisOrSd else 1):
         phi = math.pi*2 / HemisPlSd * q
@@ -610,14 +611,24 @@ def buildMesh():
           indIdx += 3
 
   # Stick
-  for t in range(StickSd):
-    theta = math.pi*2 / StickSd * t
-    z = ti.cos(theta)
-    y = ti.sin(theta)
-    crossInitPos[t] = ti.Vector([-R*7, R*y, R*z])
-    crossInitPos[t + StickSd] = ti.Vector([R*7, R*y, R*z])
-  crossInitPos[StickSd*2 + 0] = ti.Vector([-R*7, 0.0, 0.0])
-  crossInitPos[StickSd*2 + 1] = ti.Vector([ R*7, 0.0, 0.0])
+  # StickVerts = 2 * (StickSd * StickEndOrSd + 1)
+  for s in range(StickEndOrSd * 2):
+    # A ring perpendicular to the X axis
+    s1 = s
+    flip = -1
+    if s >= StickEndOrSd:
+      s1 = StickEndOrSd * 2 - 1 - s
+      flip = 1
+    x = (6 + ti.cos(math.pi/2 * (s1+1)/StickEndOrSd)) * flip
+    radius = ti.sin(math.pi/2 * (s1+1)/StickEndOrSd)
+    for t in range(StickSd):
+      theta = math.pi*2 / StickSd * t
+      z = ti.cos(theta) * radius
+      y = ti.sin(theta) * radius
+      crossInitPos[s*StickSd + t] = ti.Vector([x, y, z]) * R
+  # Extreme points
+  crossInitPos[StickSd*StickEndOrSd*2 + 0] = ti.Vector([-R*7, 0.0, 0.0])
+  crossInitPos[StickSd*StickEndOrSd*2 + 1] = ti.Vector([ R*7, 0.0, 0.0])
   # Copy a stick
   for j in range(StickVerts):
     crossInitPos[StickVerts + j] = ti.Vector([
@@ -629,21 +640,27 @@ def buildMesh():
     vertStart = ti.atomic_add(vertCount, CrossVerts)
     indStart = ti.atomic_add(indCount, CrossTris*3)
     particleVertStart[i] = vertStart
+    # StickTris = (2*StickSd) * (2*StickEndOrSd)
+    # Strips
+    for s in range(2*StickEndOrSd - 1):
+      for t in range(StickSd):
+        particleVertInds[indStart + 0] = vertStart + s*StickSd + t
+        particleVertInds[indStart + 1] = vertStart + s*StickSd + (t+1)%StickSd
+        particleVertInds[indStart + 2] = vertStart + (s+1)*StickSd + t
+        particleVertInds[indStart + 3] = vertStart + (s+1)*StickSd + t
+        particleVertInds[indStart + 4] = vertStart + s*StickSd + (t+1)%StickSd
+        particleVertInds[indStart + 5] = vertStart + (s+1)*StickSd + (t+1)%StickSd
+        indStart += 6
+    # Ends
     for t in range(StickSd):
-      particleVertInds[indStart + 0] = vertStart + t
-      particleVertInds[indStart + 1] = vertStart + (t+1)%StickSd
-      particleVertInds[indStart + 2] = vertStart + StickSd + t
-      particleVertInds[indStart + 3] = vertStart + StickSd + t
-      particleVertInds[indStart + 4] = vertStart + (t+1)%StickSd
-      particleVertInds[indStart + 5] = vertStart + StickSd + (t+1)%StickSd
-      indStart += 6
-    for t in range(StickSd):
+      # Negative X
       particleVertInds[indStart + 1] = vertStart + t
       particleVertInds[indStart + 0] = vertStart + (t+1)%StickSd
-      particleVertInds[indStart + 2] = vertStart + StickSd*2 + 0
-      particleVertInds[indStart + 3] = vertStart + StickSd + t
-      particleVertInds[indStart + 4] = vertStart + StickSd + (t+1)%StickSd
-      particleVertInds[indStart + 5] = vertStart + StickSd*2 + 1
+      particleVertInds[indStart + 2] = vertStart + StickSd*StickEndOrSd*2 + 0
+      # Positive X
+      particleVertInds[indStart + 3] = vertStart + (2*StickEndOrSd - 1)*StickSd + t
+      particleVertInds[indStart + 4] = vertStart + (2*StickEndOrSd - 1)*StickSd + (t+1)%StickSd
+      particleVertInds[indStart + 5] = vertStart + StickSd*StickEndOrSd*2 + 1
       indStart += 6
     # Copy a stick
     for j in range(StickTris * 3):
