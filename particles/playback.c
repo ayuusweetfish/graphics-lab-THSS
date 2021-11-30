@@ -16,10 +16,12 @@ typedef struct particle_header {
 } particle_header;
 
 typedef struct particle {
-  float force[5][3];
   float pos[3];
+#if RECDEBUG
   float vel[3];
+  float force[5][3];
   float contact[3];
+#endif
 } particle;
 
 static void MyDrawSphereWires(Vector3 centerPos, float radius, Color color);
@@ -211,6 +213,7 @@ int main(int argc, char *argv[])
           tint.g = Remap(phs[i].elas, 0.9, 0.3, 240, tint.g);
           tint.b = Remap(phs[i].elas, 0.9, 0.3, 240, tint.b);
           break;
+        #if RECDEBUG
         case 2: // contact force
         {
           // tint.a = (ps[framebase + i].contact[0] == -1 ? 16 : 255);
@@ -221,6 +224,7 @@ int main(int argc, char *argv[])
           tint.a = Clamp(Remap(norm3d(contactf), 0, 500, 16, 255), 16, 255);
           break;
         }
+        #endif
         default: break;
       }
       if (i != bestparticle)
@@ -237,6 +241,7 @@ int main(int argc, char *argv[])
           (Color){236, 236, 236, alpha}
         );
       }
+    #if RECDEBUG
       for (int j = 0; j < 5; j++) if (forcemask & (1 << j)) {
         Vector3 force = (Vector3){
           ps[framebase + i].force[j][0],
@@ -253,6 +258,7 @@ int main(int argc, char *argv[])
           }
         );
       }
+    #endif
     }
     // Floor
     const int gridsize = 30;
@@ -315,11 +321,13 @@ int main(int argc, char *argv[])
           ps[framebase + bestparticle].pos[1],
           ps[framebase + bestparticle].pos[2]);
         MyDrawText(s, 10, (ybase += yskip), 16, tint);
+      #if RECDEBUG
         snprintf(s, sizeof s, "vel     (%.4f, %.4f, %.4f)",
           ps[framebase + bestparticle].vel[0],
           ps[framebase + bestparticle].vel[1],
           ps[framebase + bestparticle].vel[2]);
         MyDrawText(s, 10, (ybase += yskip), 16, tint);
+      #endif
         snprintf(s, sizeof s, "radius  %.4f\n", phs[bestparticle].radius);
         MyDrawText(s, 10, (ybase += yskip), 16, tint);
         snprintf(s, sizeof s, "mass    %.4f\n", phs[bestparticle].mass);
@@ -327,6 +335,7 @@ int main(int argc, char *argv[])
         snprintf(s, sizeof s, "elast   %.4f\n", phs[bestparticle].elas);
         MyDrawText(s, 10, (ybase += yskip), 16, tint);
         ybase += 10;
+      #if RECDEBUG
         for (int j = 0; j < 5; j++) {
           snprintf(s, sizeof s, "%-10s %.5f", forcenames[j],
             norm3d(ps[framebase + bestparticle].force[j]));
@@ -350,6 +359,7 @@ int main(int argc, char *argv[])
             }
           MyDrawText(s, 10, (ybase += yskip), 16, (Color){64, 64, 64, 255});
         }
+      #endif
       }
     }
 
