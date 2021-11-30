@@ -64,12 +64,12 @@ int main(int argc, char *argv[])
   particle *ps = (particle *)malloc(nframes * sizeof(particle) * N);
   fread(ps, nframes * sizeof(particle) * N, 1, f);
 
-  Color *bodycolour = (Color *)malloc(sizeof(Color) * N);
+  Color *bodycolour = (Color *)malloc(sizeof(Color) * M);
   int randseed = 20211128;
-  for (int i = 0; i < N; i++) {
-    int r = ((randseed = ((randseed * 1103515245 + 12345) & 0x7fffffff)) >> 15) % 64;
-    int g = ((randseed = ((randseed * 1103515245 + 12345) & 0x7fffffff)) >> 16) % 64;
-    int b = ((randseed = ((randseed * 1103515245 + 12345) & 0x7fffffff)) >> 17) % 64;
+  for (int i = 0; i < M; i++) {
+    int r = ((randseed = ((randseed * 1103515245 + 12345) & 0x7fffffff)) >> 17) % 64;
+    int g = ((randseed = ((randseed * 1103515245 + 12345) & 0x7fffffff)) >> 18) % 64;
+    int b = ((randseed = ((randseed * 1103515245 + 12345) & 0x7fffffff)) >> 19) % 64;
     int base = 160 + (64 - (r * 2 + g * 5 + b) / 8) / 2;
     bodycolour[i] = (Color){r + base, g + base, b + base, 255};
   }

@@ -537,18 +537,31 @@ pdcbInitPos = ti.Vector.field(3, float, PDCBNumVerts)
 # Stick/cylinder shape
 StickSd = 12
 StickEndOrSd = 3
-StickVerts = 2 * (StickSd * StickEndOrSd + 1)
-StickTris = (2*StickSd) * (2*StickEndOrSd)
-CrossVerts = StickVerts * 3
-CrossTris = StickTris * 3
-crossInitPos = ti.Vector.field(3, float, CrossVerts)
+StickNumVerts = 2 * (StickSd * StickEndOrSd + 1)
+StickNumTris = (2*StickSd) * (2*StickEndOrSd)
+CrossNumVerts = StickNumVerts * 3
+CrossNumTris = StickNumTris * 3
+crossInitPos = ti.Vector.field(3, float, CrossNumVerts)
 
 # All vertices and triangles
-NumVerts = 1111 * PDCBNumVerts + 111 * CrossTris
-NumTris = 1111 * PDCBNumTris + 111 * CrossTris
+NumVerts = 1111 * PDCBNumVerts + 111 * CrossNumTris
+NumTris = 1111 * PDCBNumTris + 111 * CrossNumTris
 particleVerts = ti.Vector.field(3, float, NumVerts)
 particleVertStart = ti.field(int, M)
 particleVertInds = ti.field(int, NumTris * 3)
+particleColours = ti.Vector.field(3, float, NumVerts)
+
+# Linear congruent PRNG at step `n`
+@ti.func
+def LCG(n):
+  seed = 20211128
+  a = 1103515245
+  b = 12345
+  while n > 0:
+    if n % 2 == 1: seed = seed * a + b
+    a, b = a*a, (a+1)*b
+    n >>= 1
+  return seed & 0x7fffffff
 
 @ti.kernel
 def buildMesh():
@@ -626,7 +639,7 @@ def buildMesh():
           indIdx += 3
 
   # Stick
-  # StickVerts = 2 * (StickSd * StickEndOrSd + 1)
+  # StickNumVerts = 2 * (StickSd * StickEndOrSd + 1)
   for s in range(StickEndOrSd * 2):
     # A ring perpendicular to the X axis
     s1 = s
@@ -645,22 +658,22 @@ def buildMesh():
   crossInitPos[StickSd*StickEndOrSd*2 + 0] = ti.Vector([-R*7, 0.0, 0.0])
   crossInitPos[StickSd*StickEndOrSd*2 + 1] = ti.Vector([ R*7, 0.0, 0.0])
   # Copy a stick two times
-  for j in range(StickVerts):
-    crossInitPos[StickVerts + j] = ti.Vector([
+  for j in range(StickNumVerts):
+    crossInitPos[StickNumVerts + j] = ti.Vector([
       crossInitPos[j].y,
       -crossInitPos[j].x,
       crossInitPos[j].z,
     ])
-    crossInitPos[StickVerts*2 + j] = ti.Vector([
+    crossInitPos[StickNumVerts*2 + j] = ti.Vector([
       crossInitPos[j].z,
       crossInitPos[j].y,
       -crossInitPos[j].x,
     ])
   for i in range(1111, 1111 + 111):
-    vertStart = ti.atomic_add(vertCount, CrossVerts)
-    indStart = ti.atomic_add(indCount, CrossTris*3)
+    vertStart = ti.atomic_add(vertCount, CrossNumVerts)
+    indStart = ti.atomic_add(indCount, CrossNumTris*3)
     particleVertStart[i] = vertStart
-    # StickTris = (2*StickSd) * (2*StickEndOrSd)
+    # StickNumTris = (2*StickSd) * (2*StickEndOrSd)
     # Strips
     for s in range(2*StickEndOrSd - 1):
       for t in range(StickSd):
@@ -683,15 +696,34 @@ def buildMesh():
       particleVertInds[indStart + 5] = vertStart + StickSd*StickEndOrSd*2 + 1
       indStart += 6
     # Copy a stick
-    for j in range(StickTris * 3):
+    for j in range(StickNumTris * 3):
       particleVertInds[indStart + j] = (
-        particleVertInds[indStart + j - StickTris * 3] +
-        StickVerts
+        particleVertInds[indStart + j - StickNumTris * 3] +
+        StickNumVerts
       )
-      particleVertInds[indStart + StickTris*3 + j] = (
-        particleVertInds[indStart + j - StickTris * 3] +
-        StickVerts*2
+      particleVertInds[indStart + StickNumTris*3 + j] = (
+        particleVertInds[indStart + j - StickNumTris * 3] +
+        StickNumVerts*2
       )
+
+  # Colours
+  for i in range(M):
+    vertStart = particleVertStart[i]
+    vertCount = PDCBNumVerts if i < 1111 else CrossNumVerts
+    basetint = ti.Vector([0.95, 0.8, 0.65]) if i < 1111 else ti.Vector([0.9, 0.65, 0.6])
+    # Random colours
+    r = (LCG(i*3+1) >> 17) % 64
+    g = (LCG(i*3+2) >> 18) % 64
+    b = (LCG(i*3+3) >> 19) % 64
+    base = 160 + (64 - (r * 2 + g * 5 + b) // 8) // 2
+    tint = ti.Vector([
+      (base + r) / 255.0,
+      (base + g) / 255.0,
+      (base + b) / 255.0,
+    ])
+    tint = basetint * 0.7 + tint * 0.3
+    for j in range(vertCount):
+      particleColours[vertStart + j] = tint
 
 # Build the mesh for the entire scene
 # according to body position and orientation, and the precalculated shape
@@ -707,7 +739,7 @@ def updateMesh():
   for i in range(1111, 1111 + 111):
     vertStart = particleVertStart[i]
     scale = 0.6 + 0.4 * (i % 8) / 7
-    for j in range(CrossVerts):
+    for j in range(CrossNumVerts):
       particleVerts[vertStart + j] = (
         quat_rot(crossInitPos[j] * scale, bodyOri[i]) + bodyPos[i]
       )
@@ -772,7 +804,7 @@ def render(skipScrenshot=False):
   scene.set_camera(camera)
 
   # Change floor colour according to input button states
-  floorR, floorG, floorB = 0.7, 0.7, 0.7
+  floorR, floorG, floorB = 0.8, 0.8, 0.8
   if pullCloseInput[0] == 1: floorR += 0.1
   if pullCloseInput[1] == 1: floorG += 0.07
   if pullCloseInput[2] == 1: floorB += 0.15
@@ -780,7 +812,7 @@ def render(skipScrenshot=False):
   scene.point_light(pos=(0, 4, 6), color=(0.4, 0.4, 0.4))
   scene.ambient_light(color=(0.7, 0.7, 0.7))
   scene.mesh(boundVerts, indices=boundInds, color=(floorR, floorG, floorB), two_sided=True)
-  scene.mesh(particleVerts, indices=particleVertInds, color=(0.85, 0.7, 0.55), two_sided=True)
+  scene.mesh(particleVerts, indices=particleVertInds, per_vertex_color=particleColours, two_sided=True)
   canvas.scene(scene)
   if recordScreenshot and not skipScrenshot:
     fileName = 'ti%02d.png' % frameCount

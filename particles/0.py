@@ -548,6 +548,19 @@ NumTris = M * IcosphereNumTris
 particleVerts = ti.Vector.field(3, float, NumVerts)
 particleVertStart = ti.field(int, M)
 particleVertInds = ti.field(int, NumTris * 3)
+particleColours = ti.Vector.field(3, float, NumVerts)
+
+# Linear congruent PRNG at step `n`
+@ti.func
+def LCG(n):
+  seed = 20211128
+  a = 1103515245
+  b = 12345
+  while n > 0:
+    if n % 2 == 1: seed = seed * a + b
+    a, b = a*a, (a+1)*b
+    n >>= 1
+  return seed & 0x7fffffff
 
 @ti.kernel
 def buildMesh():
@@ -560,6 +573,23 @@ def buildMesh():
     particleVertStart[i] = vertStart
     for j in range(IcosphereNumTris * 3):
       particleVertInds[indStart + j] = vertStart + icosphereTrisField[j]
+
+  # Colours
+  for i in range(M):
+    vertStart = particleVertStart[i]
+    vertCount = IcosphereNumVerts
+    # Random colours
+    r = (LCG(i*3+1) >> 17) % 64
+    g = (LCG(i*3+2) >> 18) % 64
+    b = (LCG(i*3+3) >> 19) % 64
+    base = 160 + (64 - (r * 2 + g * 5 + b) // 8) // 2
+    tint = ti.Vector([
+      (base + r) / 255.0,
+      (base + g) / 255.0,
+      (base + b) / 255.0,
+    ])
+    for j in range(vertCount):
+      particleColours[vertStart + j] = tint
 
 # Build the mesh for the entire scene
 # according to body position and orientation, and the precalculated shape
@@ -633,7 +663,7 @@ def render(skipScrenshot=False):
   scene.set_camera(camera)
 
   # Change floor colour according to input button states
-  floorR, floorG, floorB = 0.7, 0.7, 0.7
+  floorR, floorG, floorB = 0.8, 0.8, 0.8
   if pullCloseInput[0] == 1: floorR += 0.1
   if pullCloseInput[1] == 1: floorG += 0.07
   if pullCloseInput[2] == 1: floorB += 0.15
@@ -641,7 +671,7 @@ def render(skipScrenshot=False):
   scene.point_light(pos=(0, 4, 6), color=(0.4, 0.4, 0.4))
   scene.ambient_light(color=(0.7, 0.7, 0.7))
   scene.mesh(boundVerts, indices=boundInds, color=(floorR, floorG, floorB), two_sided=True)
-  scene.mesh(particleVerts, indices=particleVertInds, color=(0.85, 0.7, 0.55), two_sided=True)
+  scene.mesh(particleVerts, indices=particleVertInds, per_vertex_color=particleColours, two_sided=True)
   canvas.scene(scene)
   if recordScreenshot and not skipScrenshot:
     fileName = 'ti%02d.png' % frameCount
