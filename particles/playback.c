@@ -27,15 +27,25 @@ typedef struct particle {
 static void MyDrawSphereWires(Vector3 centerPos, float radius, Color color);
 static void MyDrawCircleFilled3D(Vector3 center, float radius, Color color);
 
-Font font;
-Font fontlarge;
-static void MyDrawText(const char *text, int posX, int posY, int fontSize, Color color)
+Font font, fontlarge, fontxlarge, fontxxlarge;
+static void MyDrawText(const char *text, float posX, float posY, int fontSize, Color color)
 {
-  DrawTextEx(font, text, (Vector2){posX, posY}, fontSize, 0, color);
+  Font curfont = (
+    fontSize == 16 ? font :
+    fontSize == 24 ? fontlarge :
+    fontSize == 40 ? fontxlarge :
+    fontxxlarge);
+  DrawTextEx(curfont, text, (Vector2){posX, posY}, fontSize, 0, color);
 }
-static void MyDrawTextLarge(const char *text, int posX, int posY, int fontSize, Color color)
+static void MyDrawTextCen(const char *text, float posX, float posY, int fontSize, Color color)
 {
-  DrawTextEx(fontlarge, text, (Vector2){posX, posY}, fontSize, 0, color);
+  Font curfont = (
+    fontSize == 16 ? font :
+    fontSize == 24 ? fontlarge :
+    fontSize == 40 ? fontxlarge :
+    fontxxlarge);
+  Vector2 dims = MeasureTextEx(curfont, text, fontSize, 0);
+  MyDrawText(text, posX - dims.x / 2, posY - dims.y / 2, fontSize, color);
 }
 
 #define norm3d(_v) \
@@ -92,12 +102,11 @@ int main(int argc, char *argv[])
   InitWindow(W, H, title);
   SetTargetFPS(60);
 
-  font = LoadFontEx(
-    "Brass_Mono_regular.otf", 32, 0, 0
-  );
-  fontlarge = LoadFontEx(
-    "Brass_Mono_regular.otf", 48, 0, 0
-  );
+  const char *fontpath = "Brass_Mono_regular.otf";
+  font = LoadFontEx(fontpath, 32, 0, 0);
+  fontlarge = LoadFontEx(fontpath, 48, 0, 0);
+  fontxlarge = LoadFontEx(fontpath, 80, 0, 0);
+  fontxxlarge = LoadFontEx(fontpath, 108, 0, 0);
 
   Camera3D camera = (Camera3D){
     (Vector3){4, 5, 6},
@@ -234,6 +243,8 @@ int main(int argc, char *argv[])
       (Rectangle){W*0.5, H*0.25, W*0.5, H*0.5},
       (Vector2){0, 0},
       0, WHITE);
+    MyDrawTextCen("Mass", W/2, H*0.15, 54, WHITE);
+    MyDrawTextCen("Particles with large masses push others away", W/2, H*0.85, 40, WHITE);
     EndDrawing();
 
     if (IsKeyPressed(KEY_ENTER)) {
@@ -341,7 +352,7 @@ void draw_frame(
 
   char s[256];
   snprintf(s, sizeof s, "step %04d", stepnum);
-  MyDrawTextLarge(s, 10, 10, 24, BLACK);
+  MyDrawText(s, 10, 10, 24, BLACK);
 
   if (tintby != -1) {
     static const char *tinttypes[3] = {
