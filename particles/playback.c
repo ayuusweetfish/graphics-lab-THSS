@@ -41,6 +41,13 @@ static void MyDrawTextLarge(const char *text, int posX, int posY, int fontSize, 
 #define norm3d(_v) \
   (sqrtf(((_v)[0])*((_v)[0]) + ((_v)[1])*((_v)[1]) + ((_v)[2])*((_v)[2])))
 
+static void draw_frame(
+  int N, int M,
+  particle_header *phs, particle *ps,
+  Camera camera, Color *bodycolour,
+  int stepnum, int forcemask, int tintby, int selparticle
+);
+
 int main(int argc, char *argv[])
 {
   const char *path = "record.bin";
@@ -76,10 +83,13 @@ int main(int argc, char *argv[])
     bodycolour[i] = (Color){r + base, g + base, b + base, 255};
   }
 
+  int W = 1280;
+  int H = 720;
+
   int titlemaxlen = 16 + strlen(path);
   char *title = (char *)malloc(titlemaxlen);
   snprintf(title, titlemaxlen, "Playback [%s]", path);
-  InitWindow(1280, 720, title);
+  InitWindow(W, H, title);
   SetTargetFPS(60);
 
   font = LoadFontEx(
@@ -97,15 +107,19 @@ int main(int argc, char *argv[])
     CAMERA_PERSPECTIVE
   };
 
+  // Temporarily trick
+  void *data = malloc(W*2*H*2*4);
+  Texture2D rendertex1 = LoadTextureFromImage((Image){
+    data, W*2, H*2, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
+  });
+  free(data);
+
   int frame = 0;
   int forcemask = 0;
   int tintby = -1;
-  int immerse = 0;
+  int immerse = 1;
 
   while (!WindowShouldClose()) {
-    BeginDrawing();
-    ClearBackground(RAYWHITE);
-
     int amount = (IsKeyDown(KEY_LEFT_SHIFT) ? 1 : 10);
     if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_SPACE)) frame = (frame + amount) % nframes;
     if (IsKeyDown(KEY_LEFT)) frame = (frame + nframes - amount) % nframes;
@@ -177,7 +191,7 @@ int main(int argc, char *argv[])
 
     // Find the particle being pointed at
     float bestdistance = 1e24;
-    int bestparticle = -1;
+    int selparticle = -1;
     if (!immerse) {
       Ray ray = GetMouseRay(GetMousePosition(), camera);
       for (int i = 0; i < N; i++) {
@@ -189,183 +203,41 @@ int main(int argc, char *argv[])
         RayCollision colli = GetRayCollisionSphere(ray, position, phs[i].radius);
         if (colli.hit && colli.distance < bestdistance && colli.distance >= 0.2) {
           bestdistance = colli.distance;
-          bestparticle = i;
+          selparticle = i;
         }
       }
     }
 
-    // Draw 3D models
-    BeginMode3D(camera);
-    for (int i = 0; i < N; i++) {
-      Vector3 position = (Vector3){
-        ps[framebase + i].pos[0],
-        ps[framebase + i].pos[1],
-        ps[framebase + i].pos[2],
-      };
-      Color tint = bodycolour[(int)phs[i].body];
-      switch (tintby) {
-        case 0: // mass
-          tint.a = Remap(phs[i].mass, 0, 200, 16, 255);
-          break;
-        case 1: // elasticity
-          tint.a = Remap(phs[i].elas, 0.9, 0.3, 240, 255);
-          tint.r = Remap(phs[i].elas, 0.9, 0.3, 240, tint.r);
-          tint.g = Remap(phs[i].elas, 0.9, 0.3, 240, tint.g);
-          tint.b = Remap(phs[i].elas, 0.9, 0.3, 240, tint.b);
-          break;
-        #if RECDEBUG
-        case 2: // contact force
-        {
-          // tint.a = (ps[framebase + i].contact[0] == -1 ? 16 : 255);
-          float contactf[3] = {0, 0, 0};
-          for (int j = 0; j < 3; j++)
-            for (int k = 0; k < 3; k++)
-              contactf[k] += ps[framebase + i].force[j][k];
-          tint.a = Clamp(Remap(norm3d(contactf), 0, 500, 16, 255), 16, 255);
-          break;
-        }
-        #endif
-        default: break;
-      }
-      if (i != bestparticle)
-        MyDrawSphereWires(position, phs[i].radius, tint);
-      else
-        DrawSphereEx(position, phs[i].radius, 12, 12, tint);
-      // Shadow
-      if (position.y <= phs[i].radius * 4) {
-        float radius = Clamp((phs[i].radius * 4 - position.y) / 3, 0, phs[i].radius);
-        int alpha = Clamp(Remap(position.y, phs[i].radius * 4, phs[i].radius * 2, 0, 255), 0, 255);
-        MyDrawCircleFilled3D(
-          (Vector3){position.x, -1e-4, position.z},
-          radius,
-          (Color){236, 236, 236, alpha}
-        );
-      }
-    #if RECDEBUG
-      for (int j = 0; j < 5; j++) if (forcemask & (1 << j)) {
-        Vector3 force = (Vector3){
-          ps[framebase + i].force[j][0],
-          ps[framebase + i].force[j][1],
-          ps[framebase + i].force[j][2],
-        };
-        DrawLine3D(position,
-          Vector3Add(position, Vector3Scale(force, 5e-4)),
-          (Color){
-            (int)bodycolour[(int)phs[i].body].r * 3 / 4,
-            (int)bodycolour[(int)phs[i].body].g * 3 / 4,
-            (int)bodycolour[(int)phs[i].body].b * 3 / 4,
-            255
-          }
-        );
-      }
-    #endif
-    }
-    // Floor
-    const int gridsize = 30;
-    const float cellsize = 0.5;
-    for (int x = -gridsize; x <= gridsize; x++)
-      for (int z = -gridsize; z <= gridsize; z++) {
-        DrawLine3D(
-          (Vector3){x * cellsize, 0, -gridsize * cellsize},
-          (Vector3){x * cellsize, 0, +gridsize * cellsize},
-          (Color){192, 192, 192, 64});
-        DrawLine3D(
-          (Vector3){-gridsize * cellsize, 0, z * cellsize},
-          (Vector3){+gridsize * cellsize, 0, z * cellsize},
-          (Color){192, 192, 192, 64});
-      }
-    EndMode3D();
+    // Actual drawing
+    BeginDrawing();
+    // raylib's render textures behaves differently from default render target,
+    // hence raw pixels are read back. Performance effects are negligible
+    // as pixels need to be read back anyway.
+    // Draw the frame
+    draw_frame(
+      N, M,
+      phs, ps + framebase,
+      camera, bodycolour,
+      frame, forcemask, tintby, selparticle
+    );
+    rlDrawRenderBatchActive();  // Flush
+    // Read back pixels
+    // XXX: Hack: directly reads pixels, bypassing raylib's internals
+    unsigned char *pixels = rlReadScreenPixels(W*2, H*2);
+    UpdateTexture(rendertex1, pixels);
+    RL_FREE(pixels);
 
-    char s[256];
-    snprintf(s, sizeof s, "step %04d", frame);
-    MyDrawTextLarge(s, 10, 10, 24, BLACK);
-
-    if (tintby != -1) {
-      static const char *tinttypes[3] = {
-        "mass", "elasticity", "contact force"
-      };
-      snprintf(s, sizeof s, "tint by %s", tinttypes[tintby]);
-      MyDrawText(s, 10, 40, 16, BLACK);
-    }
-
-    if (!immerse) {
-      static const char *forcenames[5] = {
-        "repulsive", "damping", "shear", "groundup", "friction"
-      };
-      if (forcemask != 0) {
-        char *ss = s;
-        char *end = s + sizeof s;
-        *ss = '\0';
-        for (int j = 0, first = 1; j < 5; j++) if (forcemask & (1 << j)) {
-          ss += strlcat(ss, (first ? "forces: " : ", "), end - ss);
-          ss += strlcat(ss, forcenames[j], end - ss);
-          first = 0;
-        }
-        MyDrawText(s, 10, 60, 16, BLACK);
-      }
-
-      int ybase = 70;
-      int yskip = 20;
-      if (bestparticle != -1) {
-        Color tint = (Color){
-          (int)bodycolour[(int)phs[bestparticle].body].r * 3 / 4,
-          (int)bodycolour[(int)phs[bestparticle].body].g * 3 / 4,
-          (int)bodycolour[(int)phs[bestparticle].body].b * 3 / 4,
-          255
-        };
-        snprintf(s, sizeof s, "body %d  particle %d",
-          (int)phs[bestparticle].body, bestparticle);
-        MyDrawText(s, 10, (ybase += yskip), 16, tint);
-        snprintf(s, sizeof s, "pos     (%.4f, %.4f, %.4f)",
-          ps[framebase + bestparticle].pos[0],
-          ps[framebase + bestparticle].pos[1],
-          ps[framebase + bestparticle].pos[2]);
-        MyDrawText(s, 10, (ybase += yskip), 16, tint);
-      #if RECDEBUG
-        snprintf(s, sizeof s, "vel     (%.4f, %.4f, %.4f)",
-          ps[framebase + bestparticle].vel[0],
-          ps[framebase + bestparticle].vel[1],
-          ps[framebase + bestparticle].vel[2]);
-        MyDrawText(s, 10, (ybase += yskip), 16, tint);
-      #endif
-        snprintf(s, sizeof s, "radius  %.4f\n", phs[bestparticle].radius);
-        MyDrawText(s, 10, (ybase += yskip), 16, tint);
-        snprintf(s, sizeof s, "mass    %.4f\n", phs[bestparticle].mass);
-        MyDrawText(s, 10, (ybase += yskip), 16, tint);
-        snprintf(s, sizeof s, "elast   %.4f\n", phs[bestparticle].elas);
-        MyDrawText(s, 10, (ybase += yskip), 16, tint);
-        ybase += 10;
-      #if RECDEBUG
-        for (int j = 0; j < 5; j++) {
-          snprintf(s, sizeof s, "%-10s %.5f", forcenames[j],
-            norm3d(ps[framebase + bestparticle].force[j]));
-          MyDrawText(s, 10, (ybase += yskip), 16, (Color){
-            (int)bodycolour[(int)phs[bestparticle].body].r * 2 / 3,
-            (int)bodycolour[(int)phs[bestparticle].body].g * 2 / 3,
-            (int)bodycolour[(int)phs[bestparticle].body].b * 2 / 3,
-            255
-          });
-        }
-        ybase += 10;
-        if (ps[framebase + bestparticle].contact[0] != -1) {
-          char *ss = s;
-          char *end = s + sizeof s;
-          for (int j = 0; j < 3; j++)
-            if (ps[framebase + bestparticle].contact[j] != -1) {
-              ss += snprintf(ss, end - ss, "%s%d",
-                j == 0 ? "contact: " : ", ",
-                (int)ps[framebase + bestparticle].contact[j]
-              );
-            }
-          MyDrawText(s, 10, (ybase += yskip), 16, (Color){64, 64, 64, 255});
-        }
-      #endif
-      }
-    }
-
+    ClearBackground((Color){48, 48, 48});
+    DrawTexturePro(
+      rendertex1,
+      (Rectangle){0, 0, W*2, H*2},
+      (Rectangle){W*0.5, H*0.25, W*0.5, H*0.5},
+      (Vector2){0, 0},
+      0, WHITE);
     EndDrawing();
 
     if (IsKeyPressed(KEY_ENTER)) {
+      char s[32];
       snprintf(s, sizeof s, "wf%02d.png", frame);
       TakeScreenshot(s);
     }
@@ -374,6 +246,183 @@ int main(int argc, char *argv[])
   CloseWindow();
 
   return 0;
+}
+
+// Draw a frame
+void draw_frame(
+  int N, int M,
+  particle_header *phs, particle *ps,
+  Camera camera, Color *bodycolour,
+  int stepnum, int forcemask, int tintby, int selparticle
+) {
+  ClearBackground(RAYWHITE);
+
+  // Draw 3D models
+  BeginMode3D(camera);
+  for (int i = 0; i < N; i++) {
+    Vector3 position = (Vector3){
+      ps[i].pos[0],
+      ps[i].pos[1],
+      ps[i].pos[2],
+    };
+    Color tint = bodycolour[(int)phs[i].body];
+    switch (tintby) {
+      case 0: // mass
+        tint.a = Remap(phs[i].mass, 0, 200, 16, 255);
+        break;
+      case 1: // elasticity
+        tint.a = Remap(phs[i].elas, 0.9, 0.3, 240, 255);
+        tint.r = Remap(phs[i].elas, 0.9, 0.3, 240, tint.r);
+        tint.g = Remap(phs[i].elas, 0.9, 0.3, 240, tint.g);
+        tint.b = Remap(phs[i].elas, 0.9, 0.3, 240, tint.b);
+        break;
+      #if RECDEBUG
+      case 2: // contact force
+      {
+        // tint.a = (ps[i].contact[0] == -1 ? 16 : 255);
+        float contactf[3] = {0, 0, 0};
+        for (int j = 0; j < 3; j++)
+          for (int k = 0; k < 3; k++)
+            contactf[k] += ps[i].force[j][k];
+        tint.a = Clamp(Remap(norm3d(contactf), 0, 500, 16, 255), 16, 255);
+        break;
+      }
+      #endif
+      default: break;
+    }
+    if (i != selparticle)
+      MyDrawSphereWires(position, phs[i].radius, tint);
+    else
+      DrawSphereEx(position, phs[i].radius, 12, 12, tint);
+    // Shadow
+    if (position.y <= phs[i].radius * 4) {
+      float radius = Clamp((phs[i].radius * 4 - position.y) / 3, 0, phs[i].radius);
+      int alpha = Clamp(Remap(position.y, phs[i].radius * 4, phs[i].radius * 2, 0, 255), 0, 255);
+      MyDrawCircleFilled3D(
+        (Vector3){position.x, -1e-4, position.z},
+        radius,
+        (Color){236, 236, 236, alpha}
+      );
+    }
+  #if RECDEBUG
+    for (int j = 0; j < 5; j++) if (forcemask & (1 << j)) {
+      Vector3 force = (Vector3){
+        ps[i].force[j][0],
+        ps[i].force[j][1],
+        ps[i].force[j][2],
+      };
+      DrawLine3D(position,
+        Vector3Add(position, Vector3Scale(force, 5e-4)),
+        (Color){
+          (int)bodycolour[(int)phs[i].body].r * 3 / 4,
+          (int)bodycolour[(int)phs[i].body].g * 3 / 4,
+          (int)bodycolour[(int)phs[i].body].b * 3 / 4,
+          255
+        }
+      );
+    }
+  #endif
+  }
+  // Floor
+  const int gridsize = 30;
+  const float cellsize = 0.5;
+  for (int x = -gridsize; x <= gridsize; x++)
+    for (int z = -gridsize; z <= gridsize; z++) {
+      DrawLine3D(
+        (Vector3){x * cellsize, 0, -gridsize * cellsize},
+        (Vector3){x * cellsize, 0, +gridsize * cellsize},
+        (Color){192, 192, 192, 64});
+      DrawLine3D(
+        (Vector3){-gridsize * cellsize, 0, z * cellsize},
+        (Vector3){+gridsize * cellsize, 0, z * cellsize},
+        (Color){192, 192, 192, 64});
+    }
+  EndMode3D();
+
+  char s[256];
+  snprintf(s, sizeof s, "step %04d", stepnum);
+  MyDrawTextLarge(s, 10, 10, 24, BLACK);
+
+  if (tintby != -1) {
+    static const char *tinttypes[3] = {
+      "mass", "elasticity", "contact force"
+    };
+    snprintf(s, sizeof s, "tint by %s", tinttypes[tintby]);
+    MyDrawText(s, 10, 40, 16, BLACK);
+  }
+
+  static const char *forcenames[5] = {
+    "repulsive", "damping", "shear", "groundup", "friction"
+  };
+  if (forcemask != 0) {
+    char *ss = s;
+    char *end = s + sizeof s;
+    *ss = '\0';
+    for (int j = 0, first = 1; j < 5; j++) if (forcemask & (1 << j)) {
+      ss += strlcat(ss, (first ? "forces: " : ", "), end - ss);
+      ss += strlcat(ss, forcenames[j], end - ss);
+      first = 0;
+    }
+    MyDrawText(s, 10, 60, 16, BLACK);
+  }
+
+  int ybase = 70;
+  int yskip = 20;
+  if (selparticle != -1) {
+    Color tint = (Color){
+      (int)bodycolour[(int)phs[selparticle].body].r * 3 / 4,
+      (int)bodycolour[(int)phs[selparticle].body].g * 3 / 4,
+      (int)bodycolour[(int)phs[selparticle].body].b * 3 / 4,
+      255
+    };
+    snprintf(s, sizeof s, "body %d  particle %d",
+      (int)phs[selparticle].body, selparticle);
+    MyDrawText(s, 10, (ybase += yskip), 16, tint);
+    snprintf(s, sizeof s, "pos     (%.4f, %.4f, %.4f)",
+      ps[selparticle].pos[0],
+      ps[selparticle].pos[1],
+      ps[selparticle].pos[2]);
+    MyDrawText(s, 10, (ybase += yskip), 16, tint);
+  #if RECDEBUG
+    snprintf(s, sizeof s, "vel     (%.4f, %.4f, %.4f)",
+      ps[selparticle].vel[0],
+      ps[selparticle].vel[1],
+      ps[selparticle].vel[2]);
+    MyDrawText(s, 10, (ybase += yskip), 16, tint);
+  #endif
+    snprintf(s, sizeof s, "radius  %.4f\n", phs[selparticle].radius);
+    MyDrawText(s, 10, (ybase += yskip), 16, tint);
+    snprintf(s, sizeof s, "mass    %.4f\n", phs[selparticle].mass);
+    MyDrawText(s, 10, (ybase += yskip), 16, tint);
+    snprintf(s, sizeof s, "elast   %.4f\n", phs[selparticle].elas);
+    MyDrawText(s, 10, (ybase += yskip), 16, tint);
+    ybase += 10;
+  #if RECDEBUG
+    for (int j = 0; j < 5; j++) {
+      snprintf(s, sizeof s, "%-10s %.5f", forcenames[j],
+        norm3d(ps[selparticle].force[j]));
+      MyDrawText(s, 10, (ybase += yskip), 16, (Color){
+        (int)bodycolour[(int)phs[selparticle].body].r * 2 / 3,
+        (int)bodycolour[(int)phs[selparticle].body].g * 2 / 3,
+        (int)bodycolour[(int)phs[selparticle].body].b * 2 / 3,
+        255
+      });
+    }
+    ybase += 10;
+    if (ps[selparticle].contact[0] != -1) {
+      char *ss = s;
+      char *end = s + sizeof s;
+      for (int j = 0; j < 3; j++)
+        if (ps[selparticle].contact[j] != -1) {
+          ss += snprintf(ss, end - ss, "%s%d",
+            j == 0 ? "contact: " : ", ",
+            (int)ps[selparticle].contact[j]
+          );
+        }
+      MyDrawText(s, 10, (ybase += yskip), 16, (Color){64, 64, 64, 255});
+    }
+  #endif
+  }
 }
 
 // Drawing subroutines
