@@ -454,6 +454,7 @@ def step():
         impF = ti.Vector([0.0, 0.0, 0.0])
         impF.y += KsB * pen               # Hooke's law
         impF.y -= v[i].y * EtaB * elas[i] # Damping
+        if impF.y < 0: impF.y = 0
         impF.y *= bodyMas[b]  # Scale with body mass (gravitational weight)
         particleF[i, 3] += impF
         # Friction
