@@ -58,6 +58,22 @@ static void draw_frame(
   int stepnum, int forcemask, int tintby, int selparticle
 );
 
+// Hack, OpenGL functions without including headers and recompiling raylib
+typedef unsigned int GLenum;
+typedef unsigned int GLbitfield;
+typedef int GLint;
+typedef unsigned int GLuint;
+#define GL_READ_FRAMEBUFFER 0x8CA8
+#define GL_DRAW_FRAMEBUFFER 0x8CA9
+#define GL_COLOR_BUFFER_BIT 0x00004000
+#define GL_NEAREST 0x2600
+void glBindFramebuffer(GLenum target, GLuint framebuffer);
+void glBlitFramebuffer(
+  GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1,
+  GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1,
+  GLbitfield mask, GLenum filter);
+// End of hack
+
 int main(int argc, char *argv[])
 {
   const char *path = "record.bin";
@@ -116,12 +132,7 @@ int main(int argc, char *argv[])
     CAMERA_PERSPECTIVE
   };
 
-  // Temporarily trick
-  void *data = malloc(W*2*H*2*4);
-  Texture2D rendertex1 = LoadTextureFromImage((Image){
-    data, W*2, H*2, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
-  });
-  free(data);
+  RenderTexture rentex1 = LoadRenderTexture(W*2, H*2);
 
   int frame = 0;
   int forcemask = 0;
@@ -230,16 +241,21 @@ int main(int argc, char *argv[])
       frame, forcemask, tintby, selparticle
     );
     rlDrawRenderBatchActive();  // Flush
-    // Read back pixels
-    // XXX: Hack: directly reads pixels, bypassing raylib's internals
-    unsigned char *pixels = rlReadScreenPixels(W*2, H*2);
-    UpdateTexture(rendertex1, pixels);
-    RL_FREE(pixels);
 
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rentex1.id);
+    glBlitFramebuffer(
+      0, 0, W*2, H*2,
+      0, 0, W*2, H*2,
+      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    int _mipmaps;
+    rlGenTextureMipmaps(rentex1.texture.id,
+      W*2, H*2, RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, &_mipmaps);
     ClearBackground((Color){48, 48, 48});
     DrawTexturePro(
-      rendertex1,
-      (Rectangle){0, 0, W*2, H*2},
+      rentex1.texture,
+      (Rectangle){0, H*2, W*2, -H*2},
       (Rectangle){W*0.5, H*0.25, W*0.5, H*0.5},
       (Vector2){0, 0},
       0, WHITE);
@@ -250,7 +266,11 @@ int main(int argc, char *argv[])
     if (IsKeyPressed(KEY_ENTER)) {
       char s[32];
       snprintf(s, sizeof s, "wf%02d.png", frame);
-      TakeScreenshot(s);
+      // TakeScreenshot(s);
+      unsigned char *imgData = rlReadScreenPixels(W*2, H*2);
+      Image image = { imgData, W*2, H*2, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 };
+      ExportImage(image, s);
+      RL_FREE(imgData);
     }
   }
 
