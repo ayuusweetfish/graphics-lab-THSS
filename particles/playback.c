@@ -102,11 +102,11 @@ int main(int argc, char *argv[])
   InitWindow(W, H, title);
   SetTargetFPS(60);
 
-  const char *fontpath = "Brass_Mono_regular.otf";
-  font = LoadFontEx(fontpath, 32, 0, 0);
-  fontlarge = LoadFontEx(fontpath, 48, 0, 0);
-  fontxlarge = LoadFontEx(fontpath, 80, 0, 0);
-  fontxxlarge = LoadFontEx(fontpath, 108, 0, 0);
+  const char *fontpath = "AnonymousPro-Regular.ttf";
+  font = LoadFontEx(fontpath, 32, 0, 256);
+  fontlarge = LoadFontEx(fontpath, 48, 0, 256);
+  fontxlarge = LoadFontEx(fontpath, 80, 0, 256);
+  fontxxlarge = LoadFontEx(fontpath, 108, 0, 256);
 
   Camera3D camera = (Camera3D){
     (Vector3){4, 5, 6},
