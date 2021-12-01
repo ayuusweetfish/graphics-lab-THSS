@@ -242,6 +242,7 @@ int main(int argc, char *argv[])
     );
     rlDrawRenderBatchActive();  // Flush
 
+    // Copy to framebuffer
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rentex1.id);
     glBlitFramebuffer(
@@ -252,13 +253,18 @@ int main(int argc, char *argv[])
     int _mipmaps;
     rlGenTextureMipmaps(rentex1.texture.id,
       W*2, H*2, RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, &_mipmaps);
+
     ClearBackground((Color){48, 48, 48});
+    // Draw texture over filled rectangle to support non-opaque pixels
+    Rectangle rentex1dst = (Rectangle){W*0.5, H*0.25, W*0.5, H*0.5};
+    DrawRectangleRec(rentex1dst, RAYWHITE);
     DrawTexturePro(
       rentex1.texture,
       (Rectangle){0, H*2, W*2, -H*2},
-      (Rectangle){W*0.5, H*0.25, W*0.5, H*0.5},
+      rentex1dst,
       (Vector2){0, 0},
       0, WHITE);
+    // Text
     MyDrawTextCen("Mass", W/2, H*0.15, 54, WHITE);
     MyDrawTextCen("Particles with large masses push others away", W/2, H*0.85, 40, WHITE);
     EndDrawing();
