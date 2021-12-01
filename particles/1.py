@@ -189,7 +189,7 @@ def quat_mat(q):
 # All other arguments for particle `i` are prefetched for performance's sake,
 # as this does not change throughout an inner loop over `j`.
 @ti.func
-def colliResp(i, j, bodyi, radiusi, xi, vi):
+def colliResp(i, j, bodyi, radiusi, xi, vi, bodyMasi):
   bodyj = body[j]
   if bodyi != bodyj:
     xj = x[j]
@@ -197,26 +197,28 @@ def colliResp(i, j, bodyi, radiusi, xi, vi):
     dsq = r.x * r.x + r.y * r.y + r.z * r.z
     dist = radiusi + radius[j]
     if dsq < dist * dist:
-      f = ti.Vector([0.0, 0.0, 0.0])
+      factori = bodyMasi*2 / (bodyMasi + bodyMas[bodyj])
+      factorj = 2 - factori
       # Repulsive
       dirUnit = r.normalized()
-      f += Ks * (dist - dsq ** 0.5) * dirUnit
-      particleF[i, 0] += Ks * (dist - dsq ** 0.5) * dirUnit
-      particleF[j, 0] -= Ks * (dist - dsq ** 0.5) * dirUnit
+      repul = Ks * (dist - dsq ** 0.5) * dirUnit
+      particleF[i, 0] += repul * factori
+      particleF[j, 0] -= repul * factorj
       # Damping
       relVel = v[j] - vi
-      f += Eta * relVel
-      particleF[i, 1] += Eta * relVel
-      particleF[j, 1] -= Eta * relVel
+      damp = Eta * relVel
+      particleF[i, 1] += damp * factori
+      particleF[j, 1] -= damp * factorj
       # Shear
-      f += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
-      particleF[i, 2] += Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
-      particleF[j, 2] -= Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
+      shear = Kt * (relVel - (relVel.dot(dirUnit) * dirUnit))
+      particleF[i, 2] += shear * factori
+      particleF[j, 2] -= shear * factorj
       # Accumulate force and torque to respective bodies
-      fSum[bodyi] += f
-      tSum[bodyi] += (xi - bodyPos[bodyi]).cross(f)
-      fSum[bodyj] -= f
-      tSum[bodyj] -= (xj - bodyPos[bodyj]).cross(f)
+      f = repul + damp + shear
+      fSum[bodyi] += f * factori
+      tSum[bodyi] += (xi - bodyPos[bodyi]).cross(f * factori)
+      fSum[bodyj] -= f * factorj
+      tSum[bodyj] -= (xj - bodyPos[bodyj]).cross(f * factorj)
       # Record contacting particles
       for k in range(3):
         if ti.atomic_add(particleFContact[i, k], float(j + 1)) == -1: break
@@ -409,12 +411,13 @@ def step():
       upLimit = projPos[pi] + R * 2
       lwLimit = projPos[pi] - R * 2
       bodyi, radiusi, xi, vi = body[i], radius[i], x[i], v[i]
+      bodyMasi = bodyMas[bodyi]
       # Forward scan
       for pj in range(pi + 1, extraIdx):
         if projPos[pj] > upLimit: break
         j = projIdx[pj]
         if j >= N: j -= N
-        colliResp(i, j, bodyi, radiusi, xi, vi)
+        colliResp(i, j, bodyi, radiusi, xi, vi, bodyMasi)
       # Backward scan, only handling non-starting objects
       # Taichi does not allow `range` with step argument
       # for pj in range(pi - 1, -1, -1):
@@ -424,7 +427,7 @@ def step():
         j = projIdx[pj]
         if j >= N:
           j -= N
-          colliResp(i, j, bodyi, radiusi, xi, vi)
+          colliResp(i, j, bodyi, radiusi, xi, vi, bodyMasi)
 
   for b in range(M):
     f = fSum[b]
@@ -454,6 +457,7 @@ def step():
         impF = ti.Vector([0.0, 0.0, 0.0])
         impF.y += KsB * pen               # Hooke's law
         impF.y -= v[i].y * EtaB * elas[i] # Damping
+        if impF.y < 0: impF.y = 0
         impF.y *= bodyMas[b]  # Scale with body mass (gravitational weight)
         particleF[i, 3] += impF
         # Friction
@@ -834,6 +838,11 @@ while window.running:
   pullCloseInput[0] = 1 if window.is_pressed(ti.ui.UP) else 0
   pullCloseInput[1] = 1 if window.is_pressed(ti.ui.LEFT) else 0
   pullCloseInput[2] = 1 if window.is_pressed(ti.ui.SPACE) else 0
+
+  if frameCount >= 7500: break
+  if frameCount in range(3000, 3300): pullCloseInput[2] = 1
+  if frameCount in range(4500, 4700): pullCloseInput[1] = 1
+  if frameCount in range(4600, 4800): pullCloseInput[0] = 1
 
   for i in range(10):
     if record:
