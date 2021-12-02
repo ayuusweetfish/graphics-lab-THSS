@@ -31,20 +31,30 @@ Font font, fontlarge, fontxlarge, fontxxlarge;
 static void MyDrawText(const char *text, float posX, float posY, int fontSize, Color color)
 {
   Font curfont = (
-    fontSize == 16 ? font :
-    fontSize == 24 ? fontlarge :
-    fontSize == 40 ? fontxlarge :
+    fontSize == 1 ? font :
+    fontSize == 2 ? fontlarge :
+    fontSize == 3 ? fontxlarge :
     fontxxlarge);
-  DrawTextEx(curfont, text, (Vector2){posX, posY}, fontSize, 0, color);
+  int fontSizePts = (
+    fontSize == 1 ? 36 :
+    fontSize == 2 ? 54 :
+    fontSize == 3 ? 90 :
+    120) / 2;
+  DrawTextEx(curfont, text, (Vector2){posX, posY}, fontSizePts, 0, color);
 }
 static void MyDrawTextCen(const char *text, float posX, float posY, int fontSize, Color color)
 {
   Font curfont = (
-    fontSize == 16 ? font :
-    fontSize == 24 ? fontlarge :
-    fontSize == 40 ? fontxlarge :
+    fontSize == 1 ? font :
+    fontSize == 2 ? fontlarge :
+    fontSize == 3 ? fontxlarge :
     fontxxlarge);
-  Vector2 dims = MeasureTextEx(curfont, text, fontSize, 0);
+  int fontSizePts = (
+    fontSize == 1 ? 36 :
+    fontSize == 2 ? 54 :
+    fontSize == 3 ? 90 :
+    120) / 2;
+  Vector2 dims = MeasureTextEx(curfont, text, fontSizePts, 0);
   MyDrawText(text, posX - dims.x / 2, posY - dims.y / 2, fontSize, color);
 }
 
@@ -118,11 +128,12 @@ int main(int argc, char *argv[])
   InitWindow(W, H, title);
   SetTargetFPS(60);
 
-  const char *fontpath = "AnonymousPro-Regular.ttf";
-  font = LoadFontEx(fontpath, 32, 0, 256);
-  fontlarge = LoadFontEx(fontpath, 48, 0, 256);
-  fontxlarge = LoadFontEx(fontpath, 80, 0, 256);
-  fontxxlarge = LoadFontEx(fontpath, 108, 0, 256);
+  const char *fontpathr = "NotoSansMono-Regular.ttf";
+  const char *fontpathl = "NotoSansMono-Light.ttf";
+  font = LoadFontEx(fontpathr, 36, 0, 256);
+  fontlarge = LoadFontEx(fontpathr, 54, 0, 256);
+  fontxlarge = LoadFontEx(fontpathl, 90, 0, 256);
+  fontxxlarge = LoadFontEx(fontpathr, 120, 0, 256);
 
   Camera3D camera = (Camera3D){
     (Vector3){4, 5, 6},
@@ -265,8 +276,8 @@ int main(int argc, char *argv[])
       (Vector2){0, 0},
       0, WHITE);
     // Text
-    MyDrawTextCen("Mass", W/2, H*0.15, 54, WHITE);
-    MyDrawTextCen("Particles with large masses push others away", W/2, H*0.85, 40, WHITE);
+    MyDrawTextCen("Effect of Mass", W/2, H*0.15, 4, WHITE);
+    MyDrawTextCen("Particles with large masses push others away", W/2, H*0.84, 3, WHITE);
     EndDrawing();
 
     if (IsKeyPressed(KEY_ENTER)) {
@@ -378,14 +389,14 @@ void draw_frame(
 
   char s[256];
   snprintf(s, sizeof s, "step %04d", stepnum);
-  MyDrawText(s, 10, 10, 24, BLACK);
+  MyDrawText(s, 10, 10, 2, BLACK);
 
   if (tintby != -1) {
     static const char *tinttypes[3] = {
       "mass", "elasticity", "contact force"
     };
     snprintf(s, sizeof s, "tint by %s", tinttypes[tintby]);
-    MyDrawText(s, 10, 40, 16, BLACK);
+    MyDrawText(s, 10, 40, 1, BLACK);
   }
 
   static const char *forcenames[5] = {
@@ -400,7 +411,7 @@ void draw_frame(
       ss += strlcat(ss, forcenames[j], end - ss);
       first = 0;
     }
-    MyDrawText(s, 10, 60, 16, BLACK);
+    MyDrawText(s, 10, 60, 1, BLACK);
   }
 
   int ybase = 70;
@@ -414,31 +425,31 @@ void draw_frame(
     };
     snprintf(s, sizeof s, "body %d  particle %d",
       (int)phs[selparticle].body, selparticle);
-    MyDrawText(s, 10, (ybase += yskip), 16, tint);
+    MyDrawText(s, 10, (ybase += yskip), 1, tint);
     snprintf(s, sizeof s, "pos     (%.4f, %.4f, %.4f)",
       ps[selparticle].pos[0],
       ps[selparticle].pos[1],
       ps[selparticle].pos[2]);
-    MyDrawText(s, 10, (ybase += yskip), 16, tint);
+    MyDrawText(s, 10, (ybase += yskip), 1, tint);
   #if RECDEBUG
     snprintf(s, sizeof s, "vel     (%.4f, %.4f, %.4f)",
       ps[selparticle].vel[0],
       ps[selparticle].vel[1],
       ps[selparticle].vel[2]);
-    MyDrawText(s, 10, (ybase += yskip), 16, tint);
+    MyDrawText(s, 10, (ybase += yskip), 1, tint);
   #endif
     snprintf(s, sizeof s, "radius  %.4f\n", phs[selparticle].radius);
-    MyDrawText(s, 10, (ybase += yskip), 16, tint);
+    MyDrawText(s, 10, (ybase += yskip), 1, tint);
     snprintf(s, sizeof s, "mass    %.4f\n", phs[selparticle].mass);
-    MyDrawText(s, 10, (ybase += yskip), 16, tint);
+    MyDrawText(s, 10, (ybase += yskip), 1, tint);
     snprintf(s, sizeof s, "elast   %.4f\n", phs[selparticle].elas);
-    MyDrawText(s, 10, (ybase += yskip), 16, tint);
+    MyDrawText(s, 10, (ybase += yskip), 1, tint);
     ybase += 10;
   #if RECDEBUG
     for (int j = 0; j < 5; j++) {
       snprintf(s, sizeof s, "%-10s %.5f", forcenames[j],
         norm3d(ps[selparticle].force[j]));
-      MyDrawText(s, 10, (ybase += yskip), 16, (Color){
+      MyDrawText(s, 10, (ybase += yskip), 1, (Color){
         (int)bodycolour[(int)phs[selparticle].body].r * 2 / 3,
         (int)bodycolour[(int)phs[selparticle].body].g * 2 / 3,
         (int)bodycolour[(int)phs[selparticle].body].b * 2 / 3,
@@ -456,7 +467,7 @@ void draw_frame(
             (int)ps[selparticle].contact[j]
           );
         }
-      MyDrawText(s, 10, (ybase += yskip), 16, (Color){64, 64, 64, 255});
+      MyDrawText(s, 10, (ybase += yskip), 1, (Color){64, 64, 64, 255});
     }
   #endif
   }
