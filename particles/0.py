@@ -1,6 +1,12 @@
 import taichi as ti
 import taichi_glsl as ts
-ti.init(arch=ti.vulkan)
+ti.init(arch=(
+  ti.gpu if os.environ.get('TI_BACKEND') == 'gpu' else
+  ti.opengl if os.environ.get('TI_BACKEND') == 'opengl' else
+  ti.metal if os.environ.get('TI_BACKEND') == 'metal' else
+  ti.cpu if os.environ.get('TI_BACKEND') == 'cpu' else
+  ti.vulkan
+))
 
 import math
 
