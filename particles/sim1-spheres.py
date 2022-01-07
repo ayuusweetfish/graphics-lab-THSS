@@ -1,5 +1,6 @@
 import taichi as ti
 import taichi_glsl as ts
+import os
 ti.init(arch=(
   ti.gpu if os.environ.get('TI_BACKEND') == 'gpu' else
   ti.opengl if os.environ.get('TI_BACKEND') == 'opengl' else
@@ -706,9 +707,9 @@ while window.running:
       # Dump relevant data of the current step
       recordFile.write(np.concatenate((
         npFlatten(x),
-        npFlatten(v),
-        npFlatten(particleF),
-        npFlatten(particleFContact),
+        #npFlatten(v),    # Uncomment these for a debug record
+        #npFlatten(particleF),
+        #npFlatten(particleFContact),
       ), axis=1, dtype='float32').tobytes())
     frameCount += 1
     step()

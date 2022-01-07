@@ -26,6 +26,7 @@ typedef struct particle {
 
 static void MyDrawSphereWires(Vector3 centerPos, float radius, Color color);
 static void MyDrawCircleFilled3D(Vector3 center, float radius, Color color);
+static Texture2D CachedScreenshotTexture(int frame);
 
 Font font, fontlarge, fontxlarge, fontxxlarge;
 static void MyDrawText(const char *text, float posX, float posY, int fontSize, Color color)
@@ -88,6 +89,9 @@ int main(int argc, char *argv[])
 {
   const char *path = "record.bin";
   if (argc > 1) path = argv[1];
+
+  int globalmode = 0;
+  if (argc > 2) globalmode = (int)strtol(argv[2], NULL, 10);
 
   FILE *f = fopen(path, "rb");
 
@@ -158,7 +162,7 @@ int main(int argc, char *argv[])
     if (IsKeyPressed(KEY_UP)) frame = (frame + nframes - amount) % nframes;
     int framebase = frame * N;
 
-    if (IsKeyDown(KEY_A) || IsKeyDown(KEY_D)) {
+    if (globalmode == 0 && (IsKeyDown(KEY_A) || IsKeyDown(KEY_D))) {
       int rate = 0;
       if (IsKeyDown(KEY_A)) rate -= 1;
       if (IsKeyDown(KEY_D)) rate += 1;
@@ -172,7 +176,7 @@ int main(int argc, char *argv[])
       camera.position = Vector3Add(camera.position, delta);
       camera.target = Vector3Add(camera.target, delta);
     }
-    if (IsKeyDown(KEY_S) || IsKeyDown(KEY_W)) {
+    if (globalmode == 0 && (IsKeyDown(KEY_S) || IsKeyDown(KEY_W))) {
       int rate = 0;
       if (IsKeyDown(KEY_S)) rate -= 1;
       if (IsKeyDown(KEY_W)) rate += 1;
@@ -187,7 +191,7 @@ int main(int argc, char *argv[])
       camera.position = Vector3Add(camera.position, delta);
       camera.target = Vector3Add(camera.target, delta);
     }
-    if (IsKeyDown(KEY_Q) || IsKeyDown(KEY_Z)) {
+    if (globalmode == 0 && (IsKeyDown(KEY_Q) || IsKeyDown(KEY_Z))) {
       int rate = 0;
       if (IsKeyDown(KEY_Z)) rate -= 1;
       if (IsKeyDown(KEY_Q)) rate += 1;
@@ -198,7 +202,7 @@ int main(int argc, char *argv[])
       camera.position = Vector3Add(camera.position, delta);
       camera.target = Vector3Add(camera.target, delta);
     }
-    if (IsKeyDown(KEY_E) || IsKeyDown(KEY_R)) {
+    if (globalmode == 0 && (IsKeyDown(KEY_E) || IsKeyDown(KEY_R))) {
       int rate = 0;
       if (IsKeyDown(KEY_E)) rate -= 1;
       if (IsKeyDown(KEY_R)) rate += 1;
@@ -239,46 +243,72 @@ int main(int argc, char *argv[])
       }
     }
 
-    // Actual drawing
-    BeginDrawing();
-    // raylib's render textures behaves differently from default render target,
-    // hence raw pixels are read back. Performance effects are negligible
-    // as pixels need to be read back anyway.
-    // Draw the frame
-    draw_frame(
-      N, M,
-      phs, ps + framebase,
-      camera, bodycolour,
-      frame, forcemask, tintby, selparticle
-    );
-    rlDrawRenderBatchActive();  // Flush
+    if (globalmode == 0) {
+      BeginDrawing();
+      draw_frame(
+        N, M,
+        phs, ps + framebase,
+        camera, bodycolour,
+        frame, forcemask, tintby, selparticle
+      );
+      EndDrawing();
+    }
 
-    // Copy to framebuffer
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rentex1.id);
-    glBlitFramebuffer(
-      0, 0, W*2, H*2,
-      0, 0, W*2, H*2,
-      GL_COLOR_BUFFER_BIT, GL_NEAREST);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-    int _mipmaps;
-    rlGenTextureMipmaps(rentex1.texture.id,
-      W*2, H*2, RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, &_mipmaps);
+    if (globalmode >= 1 && globalmode <= 2) {
+      // Actual drawing
+      BeginDrawing();
+      // raylib's render textures behaves differently from default render target,
+      // hence raw pixels are read back. Performance effects are negligible
+      // as pixels need to be read back anyway.
+      // Draw the frame
+      draw_frame(
+        N, M,
+        phs, ps + framebase,
+        camera, bodycolour,
+        frame, 0, globalmode == 1 ? 0 : 1, selparticle
+      );
+      rlDrawRenderBatchActive();  // Flush
 
-    ClearBackground((Color){48, 48, 48});
-    // Draw texture over filled rectangle to support non-opaque pixels
-    Rectangle rentex1dst = (Rectangle){W*0.5, H*0.25, W*0.5, H*0.5};
-    DrawRectangleRec(rentex1dst, RAYWHITE);
-    DrawTexturePro(
-      rentex1.texture,
-      (Rectangle){0, H*2, W*2, -H*2},
-      rentex1dst,
-      (Vector2){0, 0},
-      0, WHITE);
-    // Text
-    MyDrawTextCen("Effect of Mass", W/2, H*0.15, 4, WHITE);
-    MyDrawTextCen("Particles with large masses push others away", W/2, H*0.84, 3, WHITE);
-    EndDrawing();
+      // Copy to framebuffer
+      glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rentex1.id);
+      glBlitFramebuffer(
+        0, 0, W*2, H*2,
+        0, 0, W*2, H*2,
+        GL_COLOR_BUFFER_BIT, GL_NEAREST);
+      glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+      int _mipmaps;
+      rlGenTextureMipmaps(rentex1.texture.id,
+        W*2, H*2, RL_PIXELFORMAT_UNCOMPRESSED_R8G8B8A8, &_mipmaps);
+
+      ClearBackground((Color){48, 48, 48});
+      // Draw texture over filled rectangle to support non-opaque pixels
+      Rectangle rentex1dst = (Rectangle){W*0.5, H*0.25, W*0.5, H*0.5};
+      DrawRectangleRec(rentex1dst, RAYWHITE);
+      DrawTexturePro(
+        rentex1.texture,
+        (Rectangle){0, H*2, W*2, -H*2},
+        rentex1dst,
+        (Vector2){0, 0},
+        0, WHITE);
+      // Screenshot
+      DrawTexturePro(
+        CachedScreenshotTexture(frame),
+        (Rectangle){0, H*2, W*2, H*2},
+        (Rectangle){W*0.0, H*0.25, W*0.5, H*0.5},
+        (Vector2){0, 0},
+        0, WHITE);
+      // Text
+      MyDrawTextCen(
+        globalmode == 1 ? "Effect of Mass" : "Effect of Elasticity",
+        W/2, H*0.15, 4, WHITE);
+      MyDrawTextCen(
+        globalmode == 1 ?
+          "Particles with large mass push others away" :
+          "Particles with high elasticity values bounce higher",
+        W/2, H*0.84, 3, WHITE);
+      EndDrawing();
+    }
 
     if (IsKeyPressed(KEY_ENTER)) {
       char s[32];
@@ -529,4 +559,38 @@ void MyDrawCircleFilled3D(Vector3 center, float radius, Color color)
         }
     rlEnd();
 #undef rlVertex3f
+}
+
+static Texture2D CachedScreenshotTexture(int frame)
+{
+  static char ptr = -1;
+  static struct entry {
+    int frame;
+    Texture2D tex;
+  } cache[32];
+  const int cache_size = sizeof cache / sizeof cache[0];
+
+  // Initialization
+  if (ptr == -1) {
+    for (int i = 0; i < cache_size; i++) cache[i].frame = -1;
+    ptr = 0;
+  }
+
+  // Lookup
+  for (int i = 0; i < cache_size; i++)
+    if (cache[i].frame == frame)
+      return cache[i].tex;
+
+  // Miss. Load and replace
+  char s[64];
+  snprintf(s, sizeof s, "sim%d/ti%02d.png", frame);
+  Texture2D tex = LoadTexture(s);
+
+  if (cache[ptr].frame != -1)
+    UnloadTexture(cache[ptr].tex);
+  cache[ptr].frame = frame;
+  cache[ptr].tex = tex;
+  ptr = (ptr + 1) % cache_size;
+
+  return tex;
 }

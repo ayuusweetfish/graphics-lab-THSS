@@ -847,9 +847,9 @@ while window.running:
       # Dump relevant data of the current step
       recordFile.write(np.concatenate((
         npFlatten(x),
-        npFlatten(v),
-        npFlatten(particleF),
-        npFlatten(particleFContact),
+        #npFlatten(v),    # Uncomment these for a debug record
+        #npFlatten(particleF),
+        #npFlatten(particleFContact),
       ), axis=1, dtype='float32').tobytes())
     frameCount += 1
     step()
