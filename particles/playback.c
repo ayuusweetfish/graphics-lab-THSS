@@ -26,7 +26,7 @@ typedef struct particle {
 
 static void MyDrawSphereWires(Vector3 centerPos, float radius, Color color);
 static void MyDrawCircleFilled3D(Vector3 center, float radius, Color color);
-static Texture2D CachedScreenshotTexture(int frame);
+static Texture2D CachedScreenshotTexture(const char *prefix, int frame);
 
 Font font, fontlarge, fontxlarge, fontxxlarge;
 static void MyDrawText(const char *text, float posX, float posY, int fontSize, Color color)
@@ -57,6 +57,13 @@ static void MyDrawTextCen(const char *text, float posX, float posY, int fontSize
     120) / 2;
   Vector2 dims = MeasureTextEx(curfont, text, fontSizePts, 0);
   MyDrawText(text, posX - dims.x / 2, posY - dims.y / 2, fontSize, color);
+}
+
+static inline unsigned char try_range(int *x, int dur)
+{
+  if (*x < dur) return 1;
+  *x -= dur;
+  return 0;
 }
 
 #define norm3d(_v) \
@@ -90,8 +97,23 @@ int main(int argc, char *argv[])
   const char *path = "record.bin";
   if (argc > 1) path = argv[1];
 
+  // Find directory of record file
+  int pathlen = strlen(path);
+  char *screenshotprefix = NULL;
+  for (int i = pathlen - 1; i >= 0; i--) {
+    if (path[i] == '/') {
+      screenshotprefix = (char *)malloc(i + 1);
+      memcpy(screenshotprefix, path, i);
+      screenshotprefix[i] = '\0';
+      break;
+    } else if (i == 0) {
+      screenshotprefix = strdup(".");
+    }
+  }
+
   int globalmode = 0;
   if (argc > 2) globalmode = (int)strtol(argv[2], NULL, 10);
+  int globalframe = 0;  // Absolute timestamp; only used when globalmode is 1
 
   FILE *f = fopen(path, "rb");
 
@@ -156,10 +178,12 @@ int main(int argc, char *argv[])
 
   while (!WindowShouldClose()) {
     int amount = (IsKeyDown(KEY_LEFT_SHIFT) ? 1 : 10);
-    if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_SPACE)) frame = (frame + amount) % nframes;
-    if (IsKeyDown(KEY_LEFT)) frame = (frame + nframes - amount) % nframes;
-    if (IsKeyPressed(KEY_DOWN)) frame = (frame + amount) % nframes;
-    if (IsKeyPressed(KEY_UP)) frame = (frame + nframes - amount) % nframes;
+    if (globalmode == 0) {
+      if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_SPACE)) frame = (frame + amount) % nframes;
+      if (IsKeyDown(KEY_LEFT)) frame = (frame + nframes - amount) % nframes;
+      if (IsKeyPressed(KEY_DOWN)) frame = (frame + amount) % nframes;
+      if (IsKeyPressed(KEY_UP)) frame = (frame + nframes - amount) % nframes;
+    }
     int framebase = frame * N;
 
     if (globalmode == 0 && (IsKeyDown(KEY_A) || IsKeyDown(KEY_D))) {
@@ -227,7 +251,7 @@ int main(int argc, char *argv[])
     // Find the particle being pointed at
     float bestdistance = 1e24;
     int selparticle = -1;
-    if (!immerse) {
+    if (globalmode == 0 && !immerse) {
       Ray ray = GetMouseRay(GetMousePosition(), camera);
       for (int i = 0; i < N; i++) {
         Vector3 position = (Vector3){
@@ -243,7 +267,60 @@ int main(int argc, char *argv[])
       }
     }
 
-    if (globalmode == 0) {
+    // 0 - wireframe
+    // 1 - mass
+    // 2 - elasticity
+    // 3 - screenshot only
+    // 4 - large text
+    int presentmode = 0;
+    // Used when presentmode is 4
+    const char *presentsubtext = NULL;
+    const char *presenttext = NULL;
+
+    if (globalmode != 0) {
+      int T = globalframe;
+
+      // Animation!
+      if (globalmode == 1) {
+        if (try_range(&T, 120)) {
+          presentmode = 4;
+          presentsubtext = "Simulation 1";
+          presenttext = "Spheric Particles";
+        } else if (try_range(&T, 600)) {
+          presentmode = 3;
+          frame = T * 10;
+        } else if (try_range(&T, 600)) {
+          presentmode = 1;
+          frame = T * 10;
+        } else if (try_range(&T, 600)) {
+          presentmode = 2;
+          frame = T * 10;
+        } else {
+          break;
+        }
+      } else if (globalmode == 2) {
+        if (try_range(&T, 120)) {
+          presentmode = 4;
+          presentsubtext = "Simulation 2";
+          presenttext = "Compound Objects";
+        } else if (try_range(&T, 600)) {
+          presentmode = 3;
+          frame = T * 10;
+        } else if (try_range(&T, 600)) {
+          presentmode = 0;
+          tintby = (T < 300 ? 1 : 0);
+          frame = T * 10;
+        } else {
+          break;
+        }
+      }
+
+      // XXX: For debug use
+      if (!IsKeyDown(KEY_Z)) globalframe += 9;
+      if (IsKeyPressed(KEY_X)) globalframe++;
+    }
+
+    if (presentmode == 0) {
       BeginDrawing();
       draw_frame(
         N, M,
@@ -254,7 +331,7 @@ int main(int argc, char *argv[])
       EndDrawing();
     }
 
-    if (globalmode >= 1 && globalmode <= 2) {
+    if (presentmode >= 1 && presentmode <= 2) {
       // Actual drawing
       BeginDrawing();
       // raylib's render textures behaves differently from default render target,
@@ -265,7 +342,7 @@ int main(int argc, char *argv[])
         N, M,
         phs, ps + framebase,
         camera, bodycolour,
-        frame, 0, globalmode == 1 ? 0 : 1, selparticle
+        frame, 0, presentmode == 1 ? 0 : 1, selparticle
       );
       rlDrawRenderBatchActive();  // Flush
 
@@ -293,20 +370,37 @@ int main(int argc, char *argv[])
         0, WHITE);
       // Screenshot
       DrawTexturePro(
-        CachedScreenshotTexture(frame),
+        CachedScreenshotTexture(screenshotprefix, frame),
         (Rectangle){0, H*2, W*2, H*2},
         (Rectangle){W*0.0, H*0.25, W*0.5, H*0.5},
         (Vector2){0, 0},
         0, WHITE);
       // Text
       MyDrawTextCen(
-        globalmode == 1 ? "Effect of Mass" : "Effect of Elasticity",
+        presentmode == 1 ? "Effect of Mass" : "Effect of Elasticity",
         W/2, H*0.15, 4, WHITE);
       MyDrawTextCen(
-        globalmode == 1 ?
+        presentmode == 1 ?
           "Particles with large mass push others away" :
           "Particles with high elasticity values bounce higher",
         W/2, H*0.84, 3, WHITE);
+      EndDrawing();
+    }
+    if (presentmode == 3) {
+      BeginDrawing();
+      DrawTexturePro(
+        CachedScreenshotTexture(screenshotprefix, frame),
+        (Rectangle){0, H*2, W*2, H*2},
+        (Rectangle){0, 0, W, H},
+        (Vector2){0, 0},
+        0, WHITE);
+      EndDrawing();
+    }
+    if (presentmode == 4) {
+      BeginDrawing();
+      ClearBackground((Color){48, 48, 48});
+      MyDrawTextCen(presentsubtext, W/2, H*0.425, 3, WHITE);
+      MyDrawTextCen(presenttext, W/2, H*0.525, 4, WHITE);
       EndDrawing();
     }
 
@@ -561,7 +655,7 @@ void MyDrawCircleFilled3D(Vector3 center, float radius, Color color)
 #undef rlVertex3f
 }
 
-static Texture2D CachedScreenshotTexture(int frame)
+static Texture2D CachedScreenshotTexture(const char *prefix, int frame)
 {
   static char ptr = -1;
   static struct entry {
@@ -583,7 +677,7 @@ static Texture2D CachedScreenshotTexture(int frame)
 
   // Miss. Load and replace
   char s[64];
-  snprintf(s, sizeof s, "sim%d/ti%02d.png", frame);
+  snprintf(s, sizeof s, "%s/ti%02d.png", prefix, frame);
   Texture2D tex = LoadTexture(s);
 
   if (cache[ptr].frame != -1)
