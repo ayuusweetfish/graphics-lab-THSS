@@ -1,3 +1,7 @@
+# Rigid body physics simulator
+
+Requires a Python installation under an OS supporting [Taichi](https://docs.taichi.graphics/).
+
 Running simulator-visualizer
 ```sh
 python3 -m venv ti
@@ -7,8 +11,10 @@ pip3 install -r requirements.txt
 python3 sim1-spheres.py     # Spheres
 python3 sim2-molecules.py   # Molecules
 
-# In case of failure: set the environment variable
-export TI_BACKEND=<gpu|opengl|vulkan|cpu>
+# In case of failure: try the following environment variable settings
+export TI_BACKEND=gpu
+export TI_BACKEND=opengl
+export TI_BACKEND=cpu       # No GPU acceleration
 ```
 
 Recording
