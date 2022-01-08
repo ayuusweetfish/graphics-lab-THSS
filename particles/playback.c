@@ -154,8 +154,8 @@ int main(int argc, char *argv[])
   InitWindow(W, H, title);
   SetTargetFPS(60);
 
-  const char *fontpathr = "NotoSansMono-Regular.ttf";
-  const char *fontpathl = "NotoSansMono-Light.ttf";
+  const char *fontpathr = "playback_fonts/NotoSansMono-Regular.ttf";
+  const char *fontpathl = "playback_fonts/NotoSansMono-Light.ttf";
   font = LoadFontEx(fontpathr, 36, 0, 256);
   fontlarge = LoadFontEx(fontpathr, 54, 0, 256);
   fontxlarge = LoadFontEx(fontpathl, 90, 0, 256);
