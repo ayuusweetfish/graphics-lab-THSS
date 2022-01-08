@@ -174,7 +174,7 @@ int main(int argc, char *argv[])
   int frame = 0;
   int forcemask = 0;
   int tintby = -1;
-  int immerse = 1;
+  int immerse = (globalmode == 0 ? 0 : 1);
 
   while (!WindowShouldClose()) {
     int amount = (IsKeyDown(KEY_LEFT_SHIFT) ? 1 : 10);
@@ -271,9 +271,10 @@ int main(int argc, char *argv[])
     // 1 - mass
     // 2 - elasticity
     // 3 - screenshot only
-    // 4 - large text
+    // 4 - large text under small text
+    // 5 - large text above small text
     int presentmode = 0;
-    // Used when presentmode is 4
+    // Used when presentmode is 4 or 5
     const char *presentsubtext = NULL;
     const char *presenttext = NULL;
 
@@ -295,6 +296,9 @@ int main(int argc, char *argv[])
         } else if (try_range(&T, 600)) {
           presentmode = 2;
           frame = T * 10;
+        } else if (try_range(&T, 2)) {
+          presentmode = 4;
+          presentsubtext = presenttext = "--";
         } else {
           break;
         }
@@ -302,7 +306,7 @@ int main(int argc, char *argv[])
         if (try_range(&T, 120)) {
           presentmode = 4;
           presentsubtext = "Simulation 2";
-          presenttext = "Compound Objects";
+          presenttext = "Antichlorobenzene";
         } else if (try_range(&T, 600)) {
           presentmode = 3;
           frame = T * 10;
@@ -310,14 +314,22 @@ int main(int argc, char *argv[])
           presentmode = 0;
           tintby = (T < 300 ? 1 : 0);
           frame = T * 10;
+        } else if (try_range(&T, 120)) {
+          presentmode = 5;
+          presenttext = "The End";
+          presentsubtext = "Thanks for watching";
+        } else if (try_range(&T, 2)) {
+          presentmode = 4;
+          presentsubtext = presenttext = "--";
         } else {
           break;
         }
       }
 
       // XXX: For debug use
-      if (!IsKeyDown(KEY_Z)) globalframe += 9;
-      if (IsKeyPressed(KEY_X)) globalframe++;
+      //if (!IsKeyDown(KEY_Z)) globalframe += 9;
+      //if (IsKeyPressed(KEY_X)) globalframe++;
+      globalframe++;
     }
 
     if (presentmode == 0) {
@@ -396,17 +408,25 @@ int main(int argc, char *argv[])
         0, WHITE);
       EndDrawing();
     }
-    if (presentmode == 4) {
+    if (presentmode == 4 || presentmode == 5) {
       BeginDrawing();
       ClearBackground((Color){48, 48, 48});
-      MyDrawTextCen(presentsubtext, W/2, H*0.425, 3, WHITE);
-      MyDrawTextCen(presenttext, W/2, H*0.525, 4, WHITE);
+      int y1, y2;
+      if (presentmode == 4) {
+        y1 = H * 0.425;
+        y2 = H * 0.525;
+      } else {
+        y1 = H * 0.55;
+        y2 = H * 0.45;
+      }
+      MyDrawTextCen(presentsubtext, W/2, y1, 3, WHITE);
+      MyDrawTextCen(presenttext, W/2, y2, 4, WHITE);
       EndDrawing();
     }
 
-    if (IsKeyPressed(KEY_ENTER)) {
+    if (globalmode != 0 || IsKeyPressed(KEY_ENTER)) {
       char s[32];
-      snprintf(s, sizeof s, "wf%02d.png", frame);
+      snprintf(s, sizeof s, "wf%04d.png", globalmode != 0 ? globalframe : frame);
       // TakeScreenshot(s);
       unsigned char *imgData = rlReadScreenPixels(W*2, H*2);
       Image image = { imgData, W*2, H*2, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 };
