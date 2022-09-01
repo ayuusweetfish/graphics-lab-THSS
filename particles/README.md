@@ -2,6 +2,9 @@
 
 Requires a Python installation under an OS supporting [Taichi](https://docs.taichi.graphics/).
 
+For implementation details, explanations and references, please
+refer to [the project report](report.pdf) (in simplified Chinese).
+
 Running simulator-visualizer
 ```sh
 python3 -m venv ti

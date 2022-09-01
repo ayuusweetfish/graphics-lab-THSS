@@ -11,6 +11,9 @@
 
 ## Notes
 
+For implementation details, explanations and references, please
+refer to [the project report](report.pdf) (in simplified Chinese).
+
 [Squirrel model](https://free3d.com/3d-model/squirrel-v2--389774.html)
 by **printable_models** on Free3D.
 
